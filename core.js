@@ -7,6 +7,7 @@ const log = require('fancy-log'),
     jsdom = require('jsdom'),
     { ignoreBrackets, ignoreFiletype, replaceUnderscore, replaceDots } = require('./config'),
     { parseFilename } = require('./mediaParser'),
+    { readVideoMetadata, isReadable } = require('./metadataReader'),
     tmdb = require('./tmdbClient'),
     { JSDOM } = jsdom;
 
@@ -33,14 +34,43 @@ const states = {
 };
 
 /**
- * Get TMDB metadata for filename (cached)
+ * Get media info - tries embedded metadata first, then filename parsing
+ * @param {string} filename - Just the filename
+ * @param {string} filepath - Full file path
  */
-async function getMediaInfo(filename) {
+async function getMediaInfo(filename, filepath) {
     if (mediaCache[filename]) return mediaCache[filename];
 
-    const parsed = parseFilename(filename);
-    log.info(`INFO: Parsed: "${parsed.title}" (${parsed.type}${parsed.season ? `, S${parsed.season}E${parsed.episode}` : ''})`);
+    let parsed = null;
+    let fromMetadata = false;
 
+    // Try reading embedded metadata first
+    if (filepath && isReadable(filepath)) {
+        try {
+            const meta = await readVideoMetadata(filepath);
+            if (meta && (meta.show || meta.title)) {
+                parsed = {
+                    title: meta.show || meta.title,
+                    year: meta.year,
+                    season: meta.season || 1,
+                    episode: meta.episode,
+                    type: (meta.show || meta.season || meta.episode) ? 'tv' : 'movie'
+                };
+                fromMetadata = true;
+                log.info(`INFO: From metadata - "${parsed.title}" S${parsed.season}E${parsed.episode}`);
+            }
+        } catch (err) {
+            log.warn(`WARN: Metadata read failed: ${err.message}`);
+        }
+    }
+
+    // Fallback to filename parsing
+    if (!parsed) {
+        parsed = parseFilename(filename);
+        log.info(`INFO: From filename - "${parsed.title}" (${parsed.type}${parsed.season ? `, S${parsed.season}E${parsed.episode}` : ''})`);
+    }
+
+    // Search TMDB
     const result = await tmdb.searchMedia(parsed);
 
     const info = {
@@ -49,7 +79,8 @@ async function getMediaInfo(filename) {
         season: parsed.season,
         episode: parsed.episode,
         episodeName: result?.episodeName || null,
-        type: parsed.type
+        type: parsed.type,
+        fromMetadata: fromMetadata
     };
 
     mediaCache[filename] = info;
@@ -82,7 +113,8 @@ const updatePresence = async (res, rpc) => {
     const { document } = new JSDOM(res.data).window;
 
     // Get playback data
-    const filename = document.getElementById('filepath').textContent.split("\\").pop().trimStr(128);
+    const filepath = document.getElementById('filepath').textContent;
+    const filename = filepath.split("\\").pop().trimStr(128);
     const state = document.getElementById('state').textContent;
     const duration = sanitizeTime(document.getElementById('durationstring').textContent);
     const position = sanitizeTime(document.getElementById('positionstring').textContent);
@@ -93,7 +125,7 @@ const updatePresence = async (res, rpc) => {
     let mediaInfo = null;
     if (state !== '-1' && state !== '0') {
         try {
-            mediaInfo = await getMediaInfo(filename);
+            mediaInfo = await getMediaInfo(filename, filepath);
         } catch (err) {
             log.error('ERROR:', err.message);
         }

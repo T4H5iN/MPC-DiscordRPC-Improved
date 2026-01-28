@@ -86,10 +86,51 @@ function startRpcWorker() {
 }
 
 function setupTray() {
-    // Base64 icon fallback or file
-    // For now try to load valid icon or use default
-    // tray = new Tray(...) 
-    // Skipping complex tray logic for now, using Window hide/show behavior
+    const { nativeImage } = require('electron');
+
+    // Simple 16x16 green circle icon (PNG base64)
+    const iconData = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAABHNCSVQICAgIfAhkiAAAAAlwSFlzAAAAbwAAAG8B8aLcQwAAABl0RVh0U29mdHdhcmUAd3d3Lmlua3NjYXBlLm9yZ5vuPBoAAABfSURBVDiNY/j//z8DDjByL4z+zwABjMQowGYAMwMDA8P/f/8Y/v/7x8DAwMjAwMDIiNUAZgYGBgZmJkYGBiYmRgYmJuyCWL3AzMTEwMjExMDIyIjdAFJdQBEgxQAilgEAD6UUEy7qpIIAAAAASUVORK5CYII=';
+
+    try {
+        let icon = nativeImage.createFromDataURL(iconData);
+        icon = icon.resize({ width: 16, height: 16 });
+
+        tray = new Tray(icon);
+
+        const contextMenu = Menu.buildFromTemplate([
+            {
+                label: 'Show App',
+                click: () => {
+                    mainWindow.show();
+                    mainWindow.focus();
+                }
+            },
+            { type: 'separator' },
+            {
+                label: 'Exit',
+                click: () => {
+                    app.isQuiting = true;
+                    app.quit();
+                }
+            }
+        ]);
+
+        tray.setToolTip('MPC Discord RPC');
+        tray.setContextMenu(contextMenu);
+
+        tray.on('click', () => {
+            if (mainWindow.isVisible()) {
+                mainWindow.hide();
+            } else {
+                mainWindow.show();
+                mainWindow.focus();
+            }
+        });
+
+        console.log('Tray initialized successfully');
+    } catch (err) {
+        console.error('Tray setup failed:', err);
+    }
 }
 
 // IPC Handlers
