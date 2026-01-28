@@ -10,7 +10,7 @@ const QUALITY_TAGS = [
     // Source
     'BluRay', 'Blu-Ray', 'BDRip', 'BRRip', 'DVDRip', 'HDRip', 'WEB-DL', 'WEBDL',
     'WEBRip', 'WEB', 'HDTV', 'PDTV', 'DVDScr', 'CAM', 'TS', 'TC', 'AMZN', 'NF',
-    'HMAX', 'DSNP', 'ATVP', 'PCOK', 'HBO', 'HULU',
+    'HMAX', 'DSNP', 'ATVP', 'PCOK', 'HBO', 'HULU', 'BD',
     // Codec
     'x264', 'x265', 'H264', 'H.264', 'H265', 'H.265', 'HEVC', 'AVC', 'XviD', 'DivX',
     'AAC', 'AC3', 'DTS', 'FLAC', 'MP3', 'Atmos', 'TrueHD',
@@ -18,7 +18,21 @@ const QUALITY_TAGS = [
     'HDR', 'HDR10', 'HDR10Plus', 'DV', 'DoVi', 'Dolby Vision',
     // Other
     'REMUX', 'PROPER', 'REPACK', 'EXTENDED', 'UNRATED', 'DIRECTORS', 'THEATRICAL',
-    '10bit', '8bit', 'Multi', 'Dual', 'Audio'
+    '10bit', '8bit', 'Multi', 'Dual', 'Audio', 'Dual-Audio'
+];
+
+// Common phrases to remove from folder/file names
+const REMOVE_PHRASES = [
+    'The Complete Series',
+    'Complete Series',
+    'The Complete Collection',
+    'Complete Collection',
+    'Season Pack',
+    'Complete Season',
+    'Full Series',
+    'All Episodes',
+    'Complete',
+    'Collection'
 ];
 
 // Regex patterns for TV show episode detection
@@ -31,6 +45,10 @@ const TV_PATTERNS = [
     /Season[.\s_-]?(\d{1,2})[.\s_-]?Episode[.\s_-]?(\d{1,3})/i,
     // E01 only (assume season 1)
     /[.\s_-]E(\d{1,3})[.\s_-]/i,
+    // Anime format: " - 01" or " - 01v2" at end (common anime naming)
+    /\s+-\s*(\d{1,3})(?:v\d)?$/i,
+    // Anime format: "[01]" episode in brackets
+    /\[(\d{1,3})\]$/i,
 ];
 
 // Year pattern (1900-2099)
@@ -87,16 +105,26 @@ function parseFilename(filename) {
         }
     }
 
-    // Remove quality tags (case insensitive)
-    for (const tag of QUALITY_TAGS) {
-        const regex = new RegExp(`[.\\s_-]${tag}(?:[.\\s_-]|$)`, 'gi');
+    // Remove common phrases (case insensitive)
+    for (const phrase of REMOVE_PHRASES) {
+        const regex = new RegExp(`[\\s_-]*${phrase}[\\s_-]*`, 'gi');
         name = name.replace(regex, ' ');
     }
 
-    // Remove release group (usually at the end after a dash)
+    // Remove quality tags (case insensitive)
+    for (const tag of QUALITY_TAGS) {
+        const regex = new RegExp(`[.\\s_(-]${tag}(?:[.\\s_)-]|$)`, 'gi');
+        name = name.replace(regex, ' ');
+    }
+
+    // Remove release group at start like (CBB) or [SubGroup]
+    name = name.replace(/^\([^)]+\)\s*/, '');
+    name = name.replace(/^\[[^\]]+\]\s*/, '');
+
+    // Remove release group at end after a dash
     name = name.replace(/-[a-zA-Z0-9]+$/, '');
 
-    // Remove brackets and their content (like [SubGroup] or (2024))
+    // Remove remaining brackets and their content
     name = name.replace(/\[[^\]]*\]/g, '');
     name = name.replace(/\([^)]*\)/g, '');
 
@@ -105,6 +133,8 @@ function parseFilename(filename) {
         .replace(/[._]/g, ' ')
         .replace(/\s+/g, ' ')
         .replace(/-+/g, ' ')
+        .replace(/^\s*-\s*/, '') // Remove leading dash
+        .replace(/\s*-\s*$/, '') // Remove trailing dash
         .trim();
 
     result.title = name || original;

@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html>
+
 <head>
     <meta charset="UTF-8">
     <title>MPC-DiscordRPC</title>
@@ -46,6 +47,15 @@
             box-shadow: 0 0 10px rgba(64, 192, 87, 0.4);
         }
 
+        .status-icon.warning {
+            background-color: #fab005;
+            box-shadow: 0 0 10px rgba(250, 176, 5, 0.4);
+        }
+
+        .status-info {
+            flex: 1;
+        }
+
         .status-info h2 {
             margin: 0;
             font-size: 1rem;
@@ -56,6 +66,16 @@
             margin: 5px 0 0;
             font-size: 0.85rem;
             color: #909296;
+        }
+
+        .correct-btn {
+            background: #fab005;
+            padding: 6px 12px;
+            font-size: 0.75rem;
+        }
+
+        .correct-btn:hover {
+            background: #e0a005;
         }
 
         .controls {
@@ -96,26 +116,92 @@
             background: #141517;
             border-radius: 4px;
             padding: 10px;
-            height: 150px;
+            height: 120px;
             overflow-y: auto;
             font-family: monospace;
             font-size: 0.8rem;
             color: #868e96;
             border: 1px solid #2c2d31;
         }
-        
+
         ::-webkit-scrollbar {
             width: 8px;
         }
+
         ::-webkit-scrollbar-track {
-            background: #1a1b1e; 
+            background: #1a1b1e;
         }
+
         ::-webkit-scrollbar-thumb {
-            background: #2c2d31; 
+            background: #2c2d31;
             border-radius: 4px;
+        }
+
+        /* Modal styles */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: #25262b;
+            padding: 24px;
+            border-radius: 8px;
+            width: 80%;
+            max-width: 400px;
+            border: 1px solid #2c2d31;
+        }
+
+        .modal-content h3 {
+            margin: 0 0 15px;
+            font-size: 1rem;
+        }
+
+        .modal-content input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #2c2d31;
+            border-radius: 4px;
+            background: #1a1b1e;
+            color: #e1e1e6;
+            font-size: 0.9rem;
+            margin-bottom: 15px;
+            box-sizing: border-box;
+        }
+
+        .modal-content input:focus {
+            outline: none;
+            border-color: #228be6;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+
+        .modal-actions button.cancel {
+            background: #5c5f66;
+        }
+
+        .modal-actions button.cancel:hover {
+            background: #4c4f56;
         }
     </style>
 </head>
+
 <body>
     <h1>
         MPC-DiscordRPC
@@ -128,6 +214,7 @@
             <h2 id="statusTitle">Idle</h2>
             <p id="statusDetail">Waiting for MPC-HC...</p>
         </div>
+        <button id="correctBtn" class="correct-btn" style="display: none;">Fix Title</button>
     </div>
 
     <div class="controls">
@@ -145,6 +232,21 @@
         <div>[System] Dashboard initialized...</div>
     </div>
 
+    <!-- Title Correction Modal -->
+    <div id="correctModal" class="modal">
+        <div class="modal-content">
+            <h3>Correct Title</h3>
+            <p style="font-size: 0.85rem; color: #909296; margin-bottom: 10px;">
+                Detected: <span id="detectedTitle" style="color: #fab005;"></span>
+            </p>
+            <input type="text" id="correctInput" placeholder="Enter correct title...">
+            <div class="modal-actions">
+                <button class="cancel" id="cancelCorrect">Cancel</button>
+                <button id="saveCorrect">Save</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         const { ipcRenderer } = require('electron');
 
@@ -154,6 +256,14 @@
         const logContainer = document.getElementById('logContainer');
         const startupToggle = document.getElementById('startupToggle');
         const updateBtn = document.getElementById('updateBtn');
+        const correctBtn = document.getElementById('correctBtn');
+        const correctModal = document.getElementById('correctModal');
+        const detectedTitle = document.getElementById('detectedTitle');
+        const correctInput = document.getElementById('correctInput');
+        const cancelCorrect = document.getElementById('cancelCorrect');
+        const saveCorrect = document.getElementById('saveCorrect');
+
+        let currentMedia = null;
 
         // Initial state
         ipcRenderer.send('get-startup');
@@ -183,12 +293,59 @@
         ipcRenderer.on('rpc-status', (event, data) => {
             statusTitle.textContent = data.state; // e.g. "Watching"
             statusDetail.textContent = data.details || '';
-            
+            currentMedia = data;
+
             if (data.state === 'Idle' || data.state === 'Unknown') {
                 statusIcon.classList.remove('active');
+                statusIcon.classList.remove('warning');
+                correctBtn.style.display = 'none';
             } else {
                 statusIcon.classList.add('active');
+                correctBtn.style.display = 'block';
+
+                // Show warning for uncertain matches
+                if (data.uncertain) {
+                    statusIcon.classList.add('warning');
+                    correctBtn.textContent = '⚠️ Fix Title';
+                    correctBtn.style.background = '#fa5252';
+                } else {
+                    statusIcon.classList.remove('warning');
+                    correctBtn.textContent = 'Fix Title';
+                    correctBtn.style.background = '';
+                }
             }
+        });
+
+        // Title correction
+        correctBtn.addEventListener('click', () => {
+            if (currentMedia && currentMedia.details) {
+                detectedTitle.textContent = currentMedia.details;
+                correctInput.value = currentMedia.details;
+                correctModal.classList.add('active');
+                correctInput.focus();
+                correctInput.select();
+            }
+        });
+
+        cancelCorrect.addEventListener('click', () => {
+            correctModal.classList.remove('active');
+        });
+
+        saveCorrect.addEventListener('click', () => {
+            const newTitle = correctInput.value.trim();
+            if (newTitle && currentMedia) {
+                // Save the override - using the detected title as key
+                ipcRenderer.send('save-title-override', {
+                    folderPath: currentMedia.details,
+                    correctTitle: newTitle
+                });
+                log(`Title correction saved: "${currentMedia.details}" → "${newTitle}"`);
+                correctModal.classList.remove('active');
+            }
+        });
+
+        ipcRenderer.on('title-override-saved', () => {
+            log('Title override saved! Will apply on next detection.');
         });
 
         function log(msg) {
@@ -199,4 +356,5 @@
         }
     </script>
 </body>
+
 </html>

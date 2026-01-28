@@ -36,20 +36,23 @@ const uri = `http://127.0.0.1:${config.port}/variables.html`;
 
 log.info('INFO: Trying to connect to Discord...');
 
-// Connected to MPC - poll every 5 seconds
+// Connected to MPC - poll every 3 seconds
 mediaEmitter.on('CONNECTED', async res => {
 	clearInterval(mpcServerLoop);
-	mpcServerLoop = setInterval(checkMPCEndpoint, 5000);
+	mpcServerLoop = setInterval(checkMPCEndpoint, 3000);
 	if (!active) {
 		log.info(`INFO: Connected to ${res.headers.server}`);
 	}
 	active = await updatePresence(res, discord);
 });
 
-// MPC disconnected - retry every 15 seconds
+// MPC disconnected - clear presence and retry every 15 seconds
 mediaEmitter.on('CONN_ERROR', () => {
 	if (active) {
-		log.warn('WARN: MPC disconnected. Waiting...');
+		log.warn('WARN: MPC disconnected. Clearing presence...');
+		if (discord && discord.isReady()) {
+			discord.clearActivity();
+		}
 	}
 	active = false;
 	clearInterval(mpcServerLoop);
@@ -62,7 +65,7 @@ mediaEmitter.on('discordConnected', () => {
 	isReconnecting = false;
 	log.info('INFO: Connected to Discord. Listening on ' + uri);
 	checkMPCEndpoint();
-	mpcServerLoop = setInterval(checkMPCEndpoint, 15000);
+	mpcServerLoop = setInterval(checkMPCEndpoint, 3000);
 });
 
 // Discord disconnected - stop polling, reconnect

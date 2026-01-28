@@ -5,10 +5,9 @@
 
 const log = require('fancy-log'),
     jsdom = require('jsdom'),
-    { ignoreBrackets, ignoreFiletype, replaceUnderscore, replaceDots } = require('./config'),
     { parseFilename } = require('./mediaParser'),
-    { readVideoMetadata, isReadable } = require('./metadataReader'),
     tmdb = require('./tmdbClient'),
+    jikan = require('./jikanClient'),
     { JSDOM } = jsdom;
 
 // Trim strings to Discord's 128 character limit
@@ -34,44 +33,118 @@ const states = {
 };
 
 /**
- * Get media info - tries embedded metadata first, then filename parsing
+ * Check if filename looks like episode-only (starts with number)
+ * Examples: "01 - Title", "01.Title", "01_Title", "1 Title"
+ */
+function isEpisodeOnlyFilename(filename) {
+    const pattern = /^(\d{1,3})\s*[-._\s]/;
+    return pattern.test(filename);
+}
+
+/**
+ * Extract episode number from episode-only filename
+ */
+function extractEpisodeNumber(filename) {
+    const pattern = /^(\d{1,3})\s*[-._\s]/;
+    const match = filename.match(pattern);
+    return match ? parseInt(match[1], 10) : null;
+}
+
+/**
+ * Search folder hierarchy for a valid show name
+ * Checks parent, grandparent, great-grandparent folders
+ * @param {string} filepath - Full file path
+ * @returns {string|null} - Cleaned show title or null
+ */
+function findShowNameFromFolders(filepath) {
+    const pathParts = filepath.split(/[\/\\]/);
+
+    // Start from parent folder and go up to great-grandparent (3 levels)
+    for (let i = pathParts.length - 2; i >= Math.max(0, pathParts.length - 4); i--) {
+        const folderName = pathParts[i];
+
+        // Skip drive letters and empty parts
+        if (!folderName || folderName.match(/^[A-Z]:$/i)) continue;
+
+        // Skip generic folder names
+        const genericFolders = ['movies', 'tv', 'anime', 'videos', 'downloads', 'torrents', 'media', 'shows', 'series'];
+        if (genericFolders.includes(folderName.toLowerCase())) continue;
+
+        // Parse folder name to clean it
+        const parsed = parseFilename(folderName + '.mkv');
+
+        // If folder name looks like a valid show title (not episode-only)
+        if (parsed.title && parsed.title.length > 2 && !isEpisodeOnlyFilename(parsed.title)) {
+            log.info(`INFO: Found show name from folder: "${parsed.title}" (level: ${pathParts.length - 1 - i})`);
+            return parsed.title;
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Get media info using filename parsing and folder detection
  * @param {string} filename - Just the filename
  * @param {string} filepath - Full file path
  */
 async function getMediaInfo(filename, filepath) {
     if (mediaCache[filename]) return mediaCache[filename];
 
-    let parsed = null;
-    let fromMetadata = false;
+    // Parse filename first
+    const filenameWithoutExt = filename.replace(/\.[^/.]+$/, '');
+    let parsed = parseFilename(filename);
+    let fromFolder = false;
 
-    // Try reading embedded metadata first
-    if (filepath && isReadable(filepath)) {
-        try {
-            const meta = await readVideoMetadata(filepath);
-            if (meta && (meta.show || meta.title)) {
-                parsed = {
-                    title: meta.show || meta.title,
-                    year: meta.year,
-                    season: meta.season || 1,
-                    episode: meta.episode,
-                    type: (meta.show || meta.season || meta.episode) ? 'tv' : 'movie'
-                };
-                fromMetadata = true;
-                log.info(`INFO: From metadata - "${parsed.title}" S${parsed.season}E${parsed.episode}`);
-            }
-        } catch (err) {
-            log.warn(`WARN: Metadata read failed: ${err.message}`);
+    // Check if filename is episode-only (e.g., "01 - Bust Through the Heavens.mkv")
+    if (isEpisodeOnlyFilename(filenameWithoutExt)) {
+        const episodeNum = extractEpisodeNumber(filenameWithoutExt);
+
+        // Search folder hierarchy for show name
+        const showName = findShowNameFromFolders(filepath);
+
+        if (showName) {
+            parsed.title = showName;
+            parsed.episode = episodeNum;
+            parsed.season = 1; // Default to season 1 for anime
+            parsed.type = 'tv';
+            fromFolder = true;
+            log.info(`INFO: From folder hierarchy - "${parsed.title}" S${parsed.season}E${parsed.episode}`);
+        } else {
+            log.info(`INFO: From filename (episode-only, no folder match) - "${parsed.title}"`);
         }
-    }
-
-    // Fallback to filename parsing
-    if (!parsed) {
-        parsed = parseFilename(filename);
+    } else {
         log.info(`INFO: From filename - "${parsed.title}" (${parsed.type}${parsed.season ? `, S${parsed.season}E${parsed.episode}` : ''})`);
     }
 
-    // Search TMDB
-    const result = await tmdb.searchMedia(parsed);
+    // Search TMDB first
+    let result = await tmdb.searchMedia(parsed);
+    let source = 'tmdb';
+
+    // If TMDB fails and this looks like anime (tv type or from folder), try Jikan
+    if (!result && (parsed.type === 'tv' || fromFolder)) {
+        log.info(`INFO: TMDB miss, trying Jikan for anime...`);
+        const animeResult = await jikan.searchAnime(parsed.title);
+        if (animeResult) {
+            result = {
+                title: animeResult.title,
+                posterUrl: animeResult.posterUrl,
+                episodeName: null
+            };
+            source = 'jikan';
+
+            // Try to get episode title
+            if (animeResult.mal_id && parsed.episode) {
+                const epInfo = await jikan.getEpisodeInfo(animeResult.mal_id, parsed.episode);
+                if (epInfo) {
+                    result.episodeName = epInfo.title;
+                }
+            }
+        }
+    }
+
+    // Determine if match is uncertain (no poster = likely wrong)
+    const uncertain = !result?.posterUrl;
 
     const info = {
         title: result?.title || parsed.title,
@@ -80,8 +153,17 @@ async function getMediaInfo(filename, filepath) {
         episode: parsed.episode,
         episodeName: result?.episodeName || null,
         type: parsed.type,
-        fromMetadata: fromMetadata
+        fromFolder: fromFolder,
+        source: result ? source : 'none',
+        uncertain: uncertain
     };
+
+    // Log the result with source info
+    if (result) {
+        log.info(`INFO: ${source.toUpperCase()} found: "${info.title}"${info.posterUrl ? ' (with poster)' : ' (NO POSTER - uncertain)'}`);
+    } else {
+        log.warn(`WARN: No API match found for "${parsed.title}" - using filename as-is`);
+    }
 
     mediaCache[filename] = info;
     return info;
@@ -121,18 +203,20 @@ const updatePresence = async (res, rpc) => {
 
     playback = { ...playback, filename, state, duration, position };
 
-    // Get media info (cached)
-    let mediaInfo = null;
-    if (state !== '-1' && state !== '0') {
-        try {
-            mediaInfo = await getMediaInfo(filename, filepath);
-        } catch (err) {
+    // Get media info (use cache first, fetch in background for new files)
+    let mediaInfo = mediaCache[filename] || null;
+
+    if (state !== '-1' && state !== '0' && !mediaInfo) {
+        // For new files, kick off API fetch but don't block
+        getMediaInfo(filename, filepath).then(info => {
+            // Will be used on next poll
+        }).catch(err => {
             log.error('ERROR:', err.message);
-        }
+        });
     }
 
     // Build display strings (Plex-style layout)
-    let displayTitle = mediaInfo?.title || mpcFork;
+    let displayTitle = mediaInfo?.title || filename.replace(/\.[^/.]+$/, '') || mpcFork;
     let displayState = '';
 
     if (mediaInfo?.type === 'tv' && mediaInfo.season && mediaInfo.episode) {
@@ -141,7 +225,8 @@ const updatePresence = async (res, rpc) => {
             displayState += ` - ${mediaInfo.episodeName}`;
         }
     }
-    displayState = displayState.trimStr(128) || `${position} / ${duration}`;
+    // Ensure state is never empty - Discord requires non-empty fields
+    displayState = displayState.trimStr(128) || `${position} / ${duration}` || 'Playing';
 
     // Build payload
     let payload = {
@@ -164,41 +249,54 @@ const updatePresence = async (res, rpc) => {
         payload.assets.large_image = mpcFork === 'MPC-BE' ? 'mpcbe_logo' : 'default';
         payload.assets.large_text = mpcFork;
     } else if (state === '1') {
-        // PAUSED - NO timestamps (freezes the progress bar)
-        // Just show the position in the state text if no episode info
+        // PAUSED - show position/duration for movies
         if (!mediaInfo?.type || mediaInfo.type !== 'tv') {
-            payload.state = `${position} / ${duration}`;
+            payload.state = position && duration ? `${position} / ${duration}` : 'Paused';
         }
-        // No timestamps = frozen progress bar
     } else if (state === '2') {
-        // PLAYING - use timestamps for live progress bar
-        // PRESENCE-FOR-PLEX uses MILLISECONDS! trying to match that.
-        const positionMs = toSeconds(position) * 1000;
-        const durationMs = toSeconds(duration) * 1000;
-        const now = Date.now(); // Milliseconds
+        // PLAYING - show position/duration for movies, use timestamps
+        if (!mediaInfo?.type || mediaInfo.type !== 'tv') {
+            payload.state = position && duration ? `${position} / ${duration}` : 'Playing';
+        }
 
-        payload.timestamps = {
-            start: now - positionMs,
-            end: now + (durationMs - positionMs)
-        };
+        // Add timestamps for live progress bar
+        if (position && duration) {
+            const positionMs = toSeconds(position) * 1000;
+            const durationMs = toSeconds(duration) * 1000;
+            const now = Date.now();
+
+            payload.timestamps = {
+                start: now - positionMs,
+                end: now + (durationMs - positionMs)
+            };
+        }
     }
 
-    // Add status_display_type (undocumented field used by Plex)
-    // Trying 1 (STATE) to see if it triggers the "more visible" bar style
+    // Final safeguard - state must never be empty
+    if (!payload.state || payload.state.trim() === '') {
+        payload.state = states[state]?.string || 'Playing';
+    }
+
     payload.status_display_type = 1;
 
-    // Only send update when something actually changes
+    // Send update when state, filename changes, or we have media info
     const shouldUpdate = (state !== playback.prevState) ||
-        (filename !== playback.prevFilename);
+        (filename !== playback.prevFilename) ||
+        (mediaInfo && !playback.prevMediaInfo);
 
     if (shouldUpdate) {
         rpc.setActivity(payload);
         log.info(`INFO: ${states[state].string} - ${displayTitle} - ${displayState}`);
+        playback.prevMediaInfo = !!mediaInfo;
     }
 
     // Save previous state
     playback.prevState = state;
     playback.prevPosition = position;
+    // Reset media info flag when file changes
+    if (filename !== playback.prevFilename) {
+        playback.prevMediaInfo = false;
+    }
     playback.prevFilename = filename;
 
     return true;

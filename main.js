@@ -69,13 +69,26 @@ function startRpcWorker() {
         if (mainWindow) {
             mainWindow.webContents.send('rpc-log', msg);
 
+            // Detect uncertain matches
+            const isUncertain = msg.includes('NO POSTER - uncertain') || msg.includes('No API match found');
+
             // Parse status for simple display
             if (msg.includes('Watching -')) {
-                mainWindow.webContents.send('rpc-status', { state: 'Watching', details: msg.split('Watching - ')[1] });
+                const details = msg.split('Watching - ')[1]?.split(' - ')[0];
+                mainWindow.webContents.send('rpc-status', {
+                    state: 'Watching',
+                    details: details,
+                    uncertain: isUncertain
+                });
             } else if (msg.includes('Paused -')) {
-                mainWindow.webContents.send('rpc-status', { state: 'Paused', details: msg.split('Paused - ')[1] });
+                const details = msg.split('Paused - ')[1]?.split(' - ')[0];
+                mainWindow.webContents.send('rpc-status', {
+                    state: 'Paused',
+                    details: details,
+                    uncertain: isUncertain
+                });
             } else if (msg.includes('Idle')) {
-                mainWindow.webContents.send('rpc-status', { state: 'Idle', details: 'Waiting for media...' });
+                mainWindow.webContents.send('rpc-status', { state: 'Idle', details: 'Waiting for media...', uncertain: false });
             }
         }
     });
@@ -145,6 +158,27 @@ ipcMain.on('get-startup', (event) => {
 
 ipcMain.on('check-update', () => {
     autoUpdater.checkForUpdatesAndNotify();
+});
+
+// User title override handlers
+ipcMain.on('save-title-override', (event, data) => {
+    // data = { folderPath: string, correctTitle: string }
+    const overrides = store.get('titleOverrides', {});
+    overrides[data.folderPath] = data.correctTitle;
+    store.set('titleOverrides', overrides);
+    console.log(`Saved override: "${data.folderPath}" -> "${data.correctTitle}"`);
+    event.reply('title-override-saved', true);
+});
+
+ipcMain.on('get-title-overrides', (event) => {
+    event.reply('title-overrides', store.get('titleOverrides', {}));
+});
+
+ipcMain.on('delete-title-override', (event, folderPath) => {
+    const overrides = store.get('titleOverrides', {});
+    delete overrides[folderPath];
+    store.set('titleOverrides', overrides);
+    event.reply('title-override-deleted', true);
 });
 
 // Update events
