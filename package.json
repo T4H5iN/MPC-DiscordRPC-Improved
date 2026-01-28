@@ -1,31 +1,34 @@
 {
   "name": "MPC-DiscordRPC",
-  "version": "0.5.0",
-  "main": "index.js",
-  "repository": "https://github.com/angeloanan/MPC-DiscordRPC.git",
-  "bugs": "https://github.com/angeloanan/MPC-DiscordRPC/issues",
+  "version": "1.0.0",
+  "description": "Discord Rich Presence for Media Player Classic with TMDB integration",
+  "main": "main.js",
   "author": "angeloanan <anandavid2002@gmail.com>",
-  "contributors": [
-    "Der-Eddy (https://www.eddy-dev.net)",
-    "Lucas Miranda <liddack@outlook.com>",
-    "MaciejGorczyca (https://github.com/MaciejGorczyca)"
-  ],
-  "os": [
-    "win32"
-  ],
-  "engines": {
-    "node": ">=8.3.0"
-  },
   "scripts": {
-    "start": "del /F /Q mpc-discordrpc.log && pm2 start pm2.config.js",
-    "stop": "pm2 delete mpc-discordrpc"
+    "start": "electron .",
+    "dist": "electron-builder"
+  },
+  "build": {
+    "appId": "com.mpc-discordrpc.app",
+    "productName": "MPC-DiscordRPC",
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "nsis"
+    }
   },
   "license": "MIT",
   "dependencies": {
-    "axios": "^0.24.0",
+    "axios": "^1.6.0",
     "discord-rpc": "^4.0.1",
-    "fancy-log": "^1.3.2",
-    "jsdom": "^11.6.2",
-    "pm2": "^5.1.2"
+    "electron-store": "^8.1.0",
+    "electron-updater": "^6.7.3",
+    "fancy-log": "^2.0.0",
+    "jsdom": "^22.1.0"
+  },
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1"
   }
 }

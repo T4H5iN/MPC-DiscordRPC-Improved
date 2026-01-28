@@ -1,114 +1,116 @@
-const log = require('fancy-log');
+/**
+ * MPC-DiscordRPC - Discord Rich Presence for Media Player Classic
+ * Shows "Watching TV" with media info, poster, and progress bar
+ */
 
+const log = require('fancy-log');
 log.info('INFO: Loading...');
 
 const axios = require('axios').default,
-	{ Client } = require('discord-rpc'),
+	DiscordIPC = require('./discordIPC'),
 	updatePresence = require('./core'),
 	events = require('events'),
 	config = require('./config'),
-	clientId = '427863248734388224';
+	tmdb = require('./tmdbClient');
+
+// Discord Application ID (hardcoded for "Watching" display)
+const clientId = '1466028230380224718';
+
+// Initialize TMDB client (uses hardcoded Read Access Token)
+tmdb.init();
+log.info('INFO: TMDB API initialized');
 
 let mediaEmitter = new events.EventEmitter(),
 	active = false,
 	discordRPCLoop,
 	mpcServerLoop,
-	rpc;
+	discord = null,
+	isReconnecting = false;
 
-// Checks if port set in config.js is valid.
+// Validate MPC port
 if (isNaN(config.port)) {
-	throw new Error('Port is empty or invalid! Please set a valid port number in \'config.js\' file.');
+	throw new Error('Port is empty or invalid! Please set a valid port number in config.js');
 }
 
 const uri = `http://127.0.0.1:${config.port}/variables.html`;
 
-log.info('INFO: Fully ready. Trying to connect to Discord client...');
+log.info('INFO: Trying to connect to Discord...');
 
-// When it succesfully connects to MPC Web Interface, it begins checking MPC
-// every 5 seconds, getting its playback data and sending it to Discord Rich Presence
-// through updatePresence() function from core.js.
-mediaEmitter.on('CONNECTED', res => {
+// Connected to MPC - poll every 5 seconds
+mediaEmitter.on('CONNECTED', async res => {
 	clearInterval(mpcServerLoop);
 	mpcServerLoop = setInterval(checkMPCEndpoint, 5000);
 	if (!active) {
 		log.info(`INFO: Connected to ${res.headers.server}`);
 	}
-	active = updatePresence(res, rpc);
+	active = await updatePresence(res, discord);
 });
 
-// When connection to MPC fails it attempts to connect
-// to MPC again every 15 seconds.
-mediaEmitter.on('CONN_ERROR', code => {
-	log.error(`ERROR: Unable to connect to Media Player Classic on port ${config.port}. ` +
-		`Make sure MPC is running, Web Interface is enabled and the port set in 'config.js' file is correct.\n` + code);
-	// If MPC was previously connected (ie. MPC gets closed while script is running)
-	// the whole process is killed and restarted by Forever in order to clean MPC Rich Presence
-	// from user's profile, as destroyRPC() apparently can't do so.
+// MPC disconnected - retry every 15 seconds
+mediaEmitter.on('CONN_ERROR', () => {
 	if (active) {
-		log.warn('WARN: Killing process to clean Rich Presence from your profile...');
-		process.exit(0);
+		log.warn('WARN: MPC disconnected. Waiting...');
 	}
-	if (mpcServerLoop._onTimeout !== checkMPCEndpoint) {
-		clearInterval(mpcServerLoop);
-		mpcServerLoop = setInterval(checkMPCEndpoint, 15000);
-	}
+	active = false;
+	clearInterval(mpcServerLoop);
+	mpcServerLoop = setInterval(checkMPCEndpoint, 15000);
 });
 
-// If RPC successfully connects to Discord client,
-// it will attempt to connect to MPC Web Interface every 15 seconds. 
+// Discord connected - start MPC polling
 mediaEmitter.on('discordConnected', () => {
 	clearInterval(discordRPCLoop);
-	log.info('INFO: Connected to Discord. Listening MPC on ' + uri);
+	isReconnecting = false;
+	log.info('INFO: Connected to Discord. Listening on ' + uri);
 	checkMPCEndpoint();
 	mpcServerLoop = setInterval(checkMPCEndpoint, 15000);
 });
 
-// If RPC gets disconnected from Discord Client,
-// it will stop checking MPC playback data.
+// Discord disconnected - stop polling, reconnect
 mediaEmitter.on('discordDisconnected', () => {
 	clearInterval(mpcServerLoop);
+	active = false;
+	if (!isReconnecting) {
+		isReconnecting = true;
+		log.warn('WARN: Discord disconnected. Reconnecting...');
+		setTimeout(initDiscord, 5000);
+	}
 });
 
-// Tries to connect to MPC Web Interface and,
-// if connected, fetches its data.
+// Check MPC Web Interface
 function checkMPCEndpoint() {
 	axios.get(uri)
-		.then(res => {
-			mediaEmitter.emit('CONNECTED', res);
-		})
-		.catch(err => {
-			mediaEmitter.emit('CONN_ERROR', err);
-		});
+		.then(res => mediaEmitter.emit('CONNECTED', res))
+		.catch(() => mediaEmitter.emit('CONN_ERROR'));
 }
 
-// Initiates a new RPC connection to Discord client.
-function initRPC(clientId) {
-	rpc = new Client({ transport: 'ipc' });
-	rpc.on('ready', () => {
-		clearInterval(discordRPCLoop);
-		mediaEmitter.emit('discordConnected');
-		rpc.transport.once('close', async () => {
-			await destroyRPC();
-			log.error('ERROR: Connection to Discord client was closed. Trying again in 10 seconds...');
-			mediaEmitter.emit('discordDisconnected');
-			discordRPCLoop = setInterval(initRPC, 10000, clientId);
-		});
-	});
+// Initialize Discord IPC connection
+async function initDiscord() {
+	if (discord && discord.isReady()) return;
 
-	// Log in to the RPC server on Discord client, and check whether or not it errors.
-	rpc.login({ clientId }).catch(() => {
-		log.warn('WARN: Connection to Discord has failed. Trying again in 10 seconds...');
-	});
+	discord = new DiscordIPC(clientId);
+	discord.on('ready', () => mediaEmitter.emit('discordConnected'));
+	discord.on('disconnected', () => mediaEmitter.emit('discordDisconnected'));
+
+	try {
+		await discord.connect();
+	} catch (err) {
+		if (!isReconnecting) {
+			log.warn('WARN: Discord not available. Retrying...');
+			isReconnecting = true;
+		}
+		discord = null;
+	}
 }
 
-// Destroys any active RPC connection.
-async function destroyRPC() {
-	if (!rpc) return;
-	await rpc.destroy();
-	rpc = null;
-}
+// Start
+initDiscord();
+discordRPCLoop = setInterval(() => {
+	if (!discord || !discord.isReady()) initDiscord();
+}, 10000);
 
-// Boots the whole script, attempting to connect
-// to Discord client every 10 seconds.
-initRPC(clientId);
-discordRPCLoop = setInterval(initRPC, 10000, clientId);
+// Graceful shutdown
+process.on('SIGINT', () => {
+	log.info('INFO: Shutting down...');
+	if (discord) discord.close();
+	process.exit(0);
+});

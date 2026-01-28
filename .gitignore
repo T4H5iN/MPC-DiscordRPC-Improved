@@ -64,3 +64,11 @@ typings/
 .jshintrc
 
 image_assets
+
+# TMDB cache
+.tmdb-cache.json
+
+# Build output
+dist/
+
+temp_plex_repo/

@@ -1,165 +1,175 @@
+/**
+ * MPC-DiscordRPC Core Module
+ * Handles fetching MPC data and sending Rich Presence updates
+ */
+
 const log = require('fancy-log'),
     jsdom = require('jsdom'),
-    { 
-        ignoreBrackets, 
-        ignoreFiletype, 
-        replaceUnderscore, 
-        showRemainingTime,  
-        replaceDots,
-    } = require('./config'),
+    { ignoreBrackets, ignoreFiletype, replaceUnderscore, replaceDots } = require('./config'),
+    { parseFilename } = require('./mediaParser'),
+    tmdb = require('./tmdbClient'),
     { JSDOM } = jsdom;
 
-// Discord Rich Presence has a string length limit of 128 characters.
-// This little plugin (based on https://stackoverflow.com/a/43006978/7090367)
-// helps by trimming strings up to a given length.
+// Trim strings to Discord's 128 character limit
 String.prototype.trimStr = function (length) {
     return this.length > length ? this.substring(0, length - 3) + "..." : this;
 };
 
-// Defines playback data fetched from MPC.
+// Playback state tracking
 let playback = {
-    filename: '',
-    position: '',
-    duration: '',
-    fileSize: '',
-    state: '',
-    prevState: '',
-    prevPosition: '',
+    filename: '', position: '', duration: '', state: '',
+    prevState: '', prevPosition: '', prevFilename: ''
 };
 
-// Defines strings and image keys according to the 'state' string
-// provided by MPC.
+// Cache for TMDB metadata
+let mediaCache = {};
+
+// State display strings
 const states = {
-    '-1': {
-        string: 'Idling',
-        stateKey: 'stop_small'
-    },
-    '0': {
-        string: 'Stopped',
-        stateKey: 'stop_small'
-    },
-    '1': {
-        string: 'Paused',
-        stateKey: 'pause_small'
-    },
-    '2': {
-        string: 'Playing',
-        stateKey: 'play_small'
-    }
+    '-1': { string: 'Idling', stateKey: 'stop_small' },
+    '0': { string: 'Stopped', stateKey: 'stop_small' },
+    '1': { string: 'Paused', stateKey: 'pause_small' },
+    '2': { string: 'Watching', stateKey: 'play_small' }
 };
 
 /**
- * Sends Rich Presence updates to Discord client.
- * @param {AxiosResponse} res Response from MPC Web Interface variables page
- * @param {RPCClient} rpc Discord Client RPC connection instance
+ * Get TMDB metadata for filename (cached)
  */
-const updatePresence = (res, rpc) => {
-    // Identifies which MPC fork is running.
-    const mpcFork = res.headers.server.replace(' WebServer', '');
+async function getMediaInfo(filename) {
+    if (mediaCache[filename]) return mediaCache[filename];
 
-    // Gets a DOM object based on MPC Web Interface variables page.
-    const { document } = new JSDOM(res.data).window;
+    const parsed = parseFilename(filename);
+    log.info(`INFO: Parsed: "${parsed.title}" (${parsed.type}${parsed.season ? `, S${parsed.season}E${parsed.episode}` : ''})`);
 
-    // Gets relevant info from the DOM object.
-    let filename = playback.filename = document.getElementById('filepath').textContent.split("\\").pop().trimStr(128);
-    playback.state = document.getElementById('state').textContent;
-    playback.duration = sanitizeTime(document.getElementById('durationstring').textContent);
-    playback.position = sanitizeTime(document.getElementById('positionstring').textContent);
+    const result = await tmdb.searchMedia(parsed);
 
-    // Replaces underscore characters to space characters
-    if (replaceUnderscore) playback.filename = playback.filename.replace(/_/g, " ");
-
-	// Removes brackets and its content from filename if `ignoreBrackets` option
-	// is set to true
-    if (ignoreBrackets) {
-        playback.filename = playback.filename.replace(/ *\[[^\]]*\]/g, "").trimStr(128);
-        if (playback.filename.substr(0, playback.filename.lastIndexOf(".")).length == 0) playback.filename = filename;
-    }
-	
-    // Replaces dots in filenames to space characters
-    // Solution found at https://stackoverflow.com/a/28673744
-    if (replaceDots) {
-        playback.filename = playback.filename.replace(/[.](?=.*[.])/g, " ");
-    }
-
-	// Removes filetype from displaying
-	if (ignoreFiletype) playback.filename = playback.filename.substr(0, playback.filename.lastIndexOf("."));
-
-    // Prepares playback data for Discord Rich Presence.
-    let payload = {
-        state: playback.duration + ' total',
-        startTimestamp: undefined,
-        endTimestamp: undefined,
-        details: playback.filename,
-        largeImageKey: mpcFork === 'MPC-BE' ? 'mpcbe_logo' : 'default',
-        largeImageText: mpcFork,
-        smallImageKey: states[playback.state].stateKey,
-        smallImageText: states[playback.state].string
+    const info = {
+        title: result?.title || parsed.title,
+        posterUrl: result?.posterUrl || null,
+        season: parsed.season,
+        episode: parsed.episode,
+        episodeName: result?.episodeName || null,
+        type: parsed.type
     };
 
-    // Makes changes to payload data according to playback state.
-    switch (playback.state) {
-        case '-1': // Idling
-            payload.state = states[playback.state].string;
-            payload.details = undefined;
-            break;
-        case '1': // Paused
-            payload.state = playback.position + ' / ' + playback.duration;
-            break;
-        case '2': // Playing
-            if (showRemainingTime) {
-                payload.endTimestamp = Date.now() + (convert(playback.duration) - convert(playback.position));
-            } else {
-                payload.startTimestamp = Date.now() - convert(playback.position);
-            }
-            break;
+    mediaCache[filename] = info;
+    return info;
+}
+
+/**
+ * Convert time string 'hh:mm:ss' to seconds
+ */
+function toSeconds(time) {
+    const parts = time.split(':');
+    const seconds = parseInt(parts[parts.length - 1]);
+    const minutes = parseInt(parts[parts.length - 2]);
+    const hours = parts.length > 2 ? parseInt(parts[0]) : 0;
+    return (hours * 3600) + (minutes * 60) + seconds;
+}
+
+/**
+ * Remove leading '00:' from time if hours is 0
+ */
+function sanitizeTime(time) {
+    return time.split(':')[0] === '00' ? time.substr(3) : time;
+}
+
+/**
+ * Main presence update function
+ */
+const updatePresence = async (res, rpc) => {
+    const mpcFork = res.headers.server.replace(' WebServer', '');
+    const { document } = new JSDOM(res.data).window;
+
+    // Get playback data
+    const filename = document.getElementById('filepath').textContent.split("\\").pop().trimStr(128);
+    const state = document.getElementById('state').textContent;
+    const duration = sanitizeTime(document.getElementById('durationstring').textContent);
+    const position = sanitizeTime(document.getElementById('positionstring').textContent);
+
+    playback = { ...playback, filename, state, duration, position };
+
+    // Get media info (cached)
+    let mediaInfo = null;
+    if (state !== '-1' && state !== '0') {
+        try {
+            mediaInfo = await getMediaInfo(filename);
+        } catch (err) {
+            log.error('ERROR:', err.message);
+        }
     }
 
-    // Only sends presence updates if playback state changes or if playback position
-    // changes while playing.
-    if ((playback.state !== playback.prevState) || (
-        playback.state === '2' &&
-        convert(playback.position) !== convert(playback.prevPosition) + 5000
-    )) {
-        rpc.setActivity(payload)
-            .catch((err) => {
-                log.error('ERROR: ' + err);
-            });
-        log.info('INFO: Presence update sent: ' +
-            `${states[playback.state].string} - ${playback.position} / ${playback.duration} - ${playback.filename}`
-        );
+    // Build display strings (Plex-style layout)
+    let displayTitle = mediaInfo?.title || mpcFork;
+    let displayState = '';
+
+    if (mediaInfo?.type === 'tv' && mediaInfo.season && mediaInfo.episode) {
+        displayState = `S${mediaInfo.season} • E${mediaInfo.episode}`;
+        if (mediaInfo.episodeName) {
+            displayState += ` - ${mediaInfo.episodeName}`;
+        }
+    }
+    displayState = displayState.trimStr(128) || `${position} / ${duration}`;
+
+    // Build payload
+    let payload = {
+        type: 3, // Watching
+        details: displayTitle.trimStr(128),
+        state: displayState,
+        assets: {
+            large_image: mediaInfo?.posterUrl || (mpcFork === 'MPC-BE' ? 'mpcbe_logo' : 'default'),
+            large_text: displayTitle.trimStr(128),
+            small_image: states[state].stateKey,
+            small_text: states[state].string
+        }
+    };
+
+    // Handle state-specific changes
+    if (state === '-1') {
+        // Idling
+        payload.details = undefined;
+        payload.state = 'Idling';
+        payload.assets.large_image = mpcFork === 'MPC-BE' ? 'mpcbe_logo' : 'default';
+        payload.assets.large_text = mpcFork;
+    } else if (state === '1') {
+        // PAUSED - NO timestamps (freezes the progress bar)
+        // Just show the position in the state text if no episode info
+        if (!mediaInfo?.type || mediaInfo.type !== 'tv') {
+            payload.state = `${position} / ${duration}`;
+        }
+        // No timestamps = frozen progress bar
+    } else if (state === '2') {
+        // PLAYING - use timestamps for live progress bar
+        // PRESENCE-FOR-PLEX uses MILLISECONDS! trying to match that.
+        const positionMs = toSeconds(position) * 1000;
+        const durationMs = toSeconds(duration) * 1000;
+        const now = Date.now(); // Milliseconds
+
+        payload.timestamps = {
+            start: now - positionMs,
+            end: now + (durationMs - positionMs)
+        };
     }
 
-    // Replaces previous playback state and position for later comparison.
-    playback.prevState = playback.state;
-    playback.prevPosition = playback.position;
+    // Add status_display_type (undocumented field used by Plex)
+    // Trying 1 (STATE) to see if it triggers the "more visible" bar style
+    payload.status_display_type = 1;
+
+    // Only send update when something actually changes
+    const shouldUpdate = (state !== playback.prevState) ||
+        (filename !== playback.prevFilename);
+
+    if (shouldUpdate) {
+        rpc.setActivity(payload);
+        log.info(`INFO: ${states[state].string} - ${displayTitle} - ${displayState}`);
+    }
+
+    // Save previous state
+    playback.prevState = state;
+    playback.prevPosition = position;
+    playback.prevFilename = filename;
+
     return true;
-};
-
-/**
- * Simple and quick utility to convert time from 'hh:mm:ss' format to milliseconds.
- * @param {string} time Time string formatted as 'hh:mm:ss'
- * @returns {number} Number of milliseconds converted from the given time string
- */
-const convert = time => {
-    let parts = time.split(':'),
-        seconds = parseInt(parts[parts.length - 1]),
-        minutes = parseInt(parts[parts.length - 2]),
-        hours = (parts.length > 2) ? parseInt(parts[0]) : 0;
-    return ((hours * 60 * 60) + (minutes * 60) + seconds) * 1000;
-};
-
-/**
- * In case the given 'hh:mm:ss' formatted time string is less than 1 hour, 
- * removes the '00' hours from it.
- * @param {string} time Time string formatted as 'hh:mm:ss'
- * @returns {string} Time string without '00' hours
- */
-const sanitizeTime = time => {
-    if (time.split(':')[0] === '00') {
-        return time.substr(3, time.length - 1);
-    }
-    return time;
 };
 
 module.exports = updatePresence;

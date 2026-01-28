@@ -1,105 +1,139 @@
-# MPC-DiscordRPC
-Discord Rich Presence for Media Player Classic (Home Cinema and Black Edition)
+# MPC-DiscordRPC (Improved)
 
-![Media Player Classic Home Cinema and Black Edition Rich Presence on Discord small profile](https://i.imgur.com/QAAJZgL.png)
+Discord Rich Presence for Media Player Classic with **TMDB integration** for movie/TV show posters and metadata.
 
-## How does this work?
-This program simply fetches playback data from MPC-HC / MPC-BE Web Interface, and displays it in your Discord profile through their wonderful [Rich Presence](https://discordapp.com/rich-presence) API.
+![Discord Presence Example](https://i.imgur.com/QAAJZgL.png)
 
-Please note that this only works with [Discord desktop client](https://discordapp.com/download), not with the web app.
+## Features
 
-## How to install
-1. Open your Media Player Classic, go to `View > Options > Player > Web Interface` and enable `Listen on port:` option. The default port is `13579`, but if you have changed it, please edit the `config.js` file after you download the project.
+- 🎬 **Show posters** - Displays movie/TV show artwork from TMDB
+- 📺 **Media titles** - Shows the actual title instead of "Media Player Classic"  
+- 📝 **Episode info** - Displays "S02E07 - Episode Title" for TV shows
+- 🔄 **Auto-reconnect** - Automatically reconnects when Discord restarts
+- 🖥️ **System tray** - Runs in background with tray icon
+- 🚀 **Windows startup** - Optional auto-start with Windows
 
-![Enable the option "Listen on port"](https://cdn.discordapp.com/attachments/416273308540207116/428748994307424256/unknown.png)
+## How It Works
 
-2. Install [`Node.JS`](https://nodejs.org/en/download/current/) (we recommend using the latest version).
+This program fetches playback data from MPC-HC / MPC-BE Web Interface and enriches it with metadata from [The Movie Database (TMDB)](https://www.themoviedb.org/). The result is displayed on your Discord profile through Rich Presence.
 
-3. [Download this project as a .zip file](https://github.com/angeloanan/MPC-DiscordRPC/archive/master.zip), extract it and open a terminal window in the project directory. Otherwise, if you have [Git](https://git-scm.com/) installed, run:
+**Note:** Only works with [Discord desktop client](https://discordapp.com/download), not the web app.
 
-```sh
-git clone https://github.com/angeloanan/MPC-DiscordRPC.git && cd MPC-DiscordRPC
-```
+## Installation
 
-4. Install dependencies using: 
-```sh
-npm i
-``` 
+### Prerequisites
 
-> Note: You can safely ignore all peer and optional dependencies warnings as they are not required for the program to work.
+1. **Enable MPC Web Interface**: Open MPC → `View > Options > Player > Web Interface` → Enable `Listen on port:` (default: `13579`)
 
-5. Start the program using: 
-```sh
-npm start
-``` 
-or via
+2. **Get TMDB API Key** (free): Register at [themoviedb.org/settings/api](https://www.themoviedb.org/settings/api)
 
-```sh
-node index.js
-``` 
+3. **Create Discord Application** (for "Watching" text): Go to [discord.com/developers/applications](https://discord.com/developers/applications), create an app, copy the Application ID
 
-> Note: Using `npm start` will start the program as a background process so you don't need to keep a terminal window open in order to keep the script running. Thus, you may close your terminal window after running this command.
+### Option A: Download Pre-built EXE (Recommended)
 
-And voilà! It will now show in your Discord profile what you're watching/listening to on MPC.
+1. Download `MPC-DiscordRPC-Tray.exe` and `.env.example` from [Releases](../../releases)
+2. Rename `.env.example` to `.env`
+3. Edit `.env` with your TMDB API key and Discord Application ID
+4. Run `MPC-DiscordRPC-Tray.exe`
 
-If you started the program using `npm start` and need MPC-DiscordRPC to stop showing your playback info, just run:
+### Option B: Run from Source
 
-```
-npm stop
-```
+1. Install [Node.js](https://nodejs.org/en/download/) (v14+)
 
-## How to update
-
-1. Navigate to the directory where did you cloned/downloaded this project and open a terminal window.
-
-2. Stop the program using:
-
-```sh
-npm stop
-```
-
-3. Update this project by [redownloading this project as a .zip file](https://github.com/angeloanan/MPC-DiscordRPC/archive/master.zip) and replacing the old files. 
-
-   Otherwise, if you have Git installed, run:
+2. Clone this repository:
    ```sh
-   git pull
+   git clone https://github.com/YOUR_USERNAME/MPC-DiscordRPC-Improved.git
+   cd MPC-DiscordRPC-Improved
    ```
 
-4. Start the program again using:
+3. Install dependencies:
+   ```sh
+   npm install
+   ```
+
+4. Create `.env` file (copy from `.env.example`):
+   ```env
+   TMDB_API_KEY=your_tmdb_api_key_here
+   DISCORD_CLIENT_ID=your_discord_app_id_here
+   ```
+
+5. Run:
+   ```sh
+   # Console mode
+   npm start
+   
+   # System tray mode
+   npm run tray
+   ```
+
+## Auto-Start with Windows
+
+Run `install-startup.bat` to add MPC-DiscordRPC to Windows startup.
+
+To remove from startup, run `uninstall-startup.bat`.
+
+## Building EXE
+
+To compile into a standalone executable:
+
 ```sh
-npm start
+npm run build:tray
 ```
 
-Now you may close the terminal. The project is fully up to date!
+The EXE will be created in the `dist/` folder.
 
-## `config.js` options
+## Configuration
 
-#### `exports.port`
-Default: `13579`
+### `.env` File
 
-Port on which MPC Web Interface is running. See the [How to install](#how-to-install) section above to learn more.
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `TMDB_API_KEY` | Your TMDB API key for poster lookup | Yes |
+| `DISCORD_CLIENT_ID` | Your Discord Application ID | No (uses default) |
 
-#### `exports.ignoreBrackets`
-Default: `true`
+### `config.js` Options
 
-Whether to omit brackets `[]` and its content in filenames. Useful if you don't want to show on your profile those info tags that usually comes inside brackets in filenames, like `[1080p]`, `[Translator Group Name]`, etc. You can set it to `false` or remove this line to turn off this behavior.
+| Option | Default | Description |
+|--------|---------|-------------|
+| `port` | `13579` | MPC Web Interface port |
+| `ignoreBrackets` | `true` | Remove `[tags]` from filenames |
+| `ignoreFiletype` | `false` | Hide file extension |
+| `replaceUnderscore` | `true` | Replace `_` with spaces |
+| `replaceDots` | `true` | Replace `.` with spaces |
+| `showRemainingTime` | `false` | Show remaining time instead of elapsed |
 
-#### `exports.ignoreFiletype`
-Default: `false`
+## How Filenames Are Parsed
 
-Whether to omit filetype. Useful if you don't want to show on your profile the type of the file that is currently open, for example `.mp4`, `.mkv`, `.flac`. You can set it to `true` to turn on this behavior.
+The app intelligently extracts media info from filenames:
 
-#### `exports.replaceUnderscore`
-Default: `true`
+| Filename | Detected |
+|----------|----------|
+| `Fallout 2024 S02E07 1080p WEB.mkv` | TV: "Fallout", Season 2, Episode 7 |
+| `Dune Part Two 2024 AMZN WEB-DL.mkv` | Movie: "Dune Part Two", 2024 |
+| `[SubGroup] Anime Name - 05.mkv` | TV: "Anime Name", Episode 5 |
 
-Whether to replace `_` with space. Useful if you have files like `Your_Favourite_Movie`. You can set it to `false` or remove this line to turn off this behavior.
+## Troubleshooting
 
-#### `exports.replaceDots`
-Default: `true`
+**"TMDB_API_KEY not set"**
+- Make sure you created a `.env` file with your API key
 
-Whether to replace dot (`.`) characters (except the file extension one) with spaces. This way, `Your.Favourite.Movie.mp4` will be displayed as `Your Favourite Movie.mp4`. You can set it to `false` or remove this line to turn off this behavior.
+**Poster not showing**
+- Discord caches images; give it a few seconds
+- Check if TMDB has the correct movie/show
 
-#### `exports.showRemainingTime`
-Default: `false`
+**"Unable to connect to MPC"**
+- Enable Web Interface in MPC options
+- Check the port matches in `config.js`
 
-Whether to display the current file's remaining playback time while playing, instead of showing the elapsed time.
+**"Connection to Discord failed"**
+- Make sure Discord desktop is running
+- The app will auto-retry every 10 seconds
+
+## Credits
+
+- Original project by [angeloanan](https://github.com/angeloanan/MPC-DiscordRPC)
+- Movie/TV metadata from [The Movie Database (TMDB)](https://www.themoviedb.org/)
+
+## License
+
+MIT License
