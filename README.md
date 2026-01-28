@@ -2,7 +2,7 @@
 
 Discord Rich Presence for Media Player Classic with **TMDB integration** for movie/TV show posters and metadata.
 
-![Discord Presence Example](https://i.imgur.com/QAAJZgL.png)
+![Discord Presence Example](https://i.ibb.co.com/gbzKGfng/image.png)
 
 ## Features
 
