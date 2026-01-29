@@ -1,21 +1,32 @@
 {
   "name": "MPC-DiscordRPC",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "Discord Rich Presence for Media Player Classic with TMDB integration",
   "main": "main.js",
   "author": "angeloanan <anandavid2002@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/T4H5iN/MPC-DiscordRPC-Improved.git"
+  },
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder"
+    "dist": "electron-builder -p never"
   },
   "build": {
     "appId": "com.mpc-discordrpc.app",
     "productName": "MPC-DiscordRPC",
+    "publish": [
+      "github"
+    ],
     "directories": {
       "output": "dist"
     },
     "win": {
-      "target": "nsis"
+      "target": [
+        "nsis",
+        "zip"
+      ],
+      "artifactName": "${productName}-${version}-windows-${arch}.${ext}"
     },
     "nsis": {
       "oneClick": false,

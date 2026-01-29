@@ -207,6 +207,12 @@ ipcMain.on('delete-title-override', (event, folderPath) => {
 autoUpdater.on('update-available', () => {
     mainWindow.webContents.send('update-msg', 'Update available!');
 });
+autoUpdater.on('update-not-available', () => {
+    mainWindow.webContents.send('update-msg', 'No updates available.');
+});
+autoUpdater.on('error', (err) => {
+    mainWindow.webContents.send('update-msg', 'Update error: ' + err);
+});
 autoUpdater.on('update-downloaded', () => {
     mainWindow.webContents.send('update-msg', 'Update downloaded. Restarting...');
     setTimeout(() => autoUpdater.quitAndInstall(), 3000);
