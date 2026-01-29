@@ -43,12 +43,16 @@ const TV_PATTERNS = [
     /[.\s_-](\d{1,2})x(\d{1,3})[.\s_-]?/i,
     // Season 1 Episode 1
     /Season[.\s_-]?(\d{1,2})[.\s_-]?Episode[.\s_-]?(\d{1,3})/i,
+    // Anime format: "3rd Season - 03" (ordinal season, episode after dash)
+    /\s+(\d{1,2})(?:st|nd|rd|th)\s+Season\s*-\s*(\d{1,3})(?:\s|$)/i,
+    // Anime format: "Show S3 - 03" (season in title, episode after dash)
+    /\s+S(\d{1,2})\s*-\s*(\d{1,3})(?:\s|$)/i,
     // E01 only (assume season 1)
     /[.\s_-]E(\d{1,3})[.\s_-]/i,
-    // Anime format: " - 01" or " - 01v2" at end (common anime naming)
-    /\s+-\s*(\d{1,3})(?:v\d)?$/i,
-    // Anime format: "[01]" episode in brackets
-    /\[(\d{1,3})\]$/i,
+    // Anime format: " - 01" or " - 01v2" followed by quality/group info (SubsPlease, Erai-raws, etc)
+    /\s+-\s*(\d{1,3})(?:v\d)?\s*(?:\(|\[|$)/i,
+    // Anime format: "[01]" episode in brackets (at end or before quality)
+    /\[(\d{1,3})\](?:\s*\(|\s*\[|$)/i,
 ];
 
 // Year pattern (1900-2099)

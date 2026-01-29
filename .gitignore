@@ -72,3 +72,4 @@ image_assets
 dist/
 
 temp_plex_repo/
+test-parser.js

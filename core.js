@@ -121,10 +121,11 @@ async function getMediaInfo(filename, filepath) {
     let result = await tmdb.searchMedia(parsed);
     let source = 'tmdb';
 
-    // If TMDB fails and this looks like anime (tv type or from folder), try Jikan
+    // If TMDB fails completely, try Jikan for anime
     if (!result && (parsed.type === 'tv' || fromFolder)) {
         log.info(`INFO: TMDB miss, trying Jikan for anime...`);
-        const animeResult = await jikan.searchAnime(parsed.title);
+        // Pass season to find correct season entry
+        const animeResult = await jikan.searchAnime(parsed.title, parsed.season);
         if (animeResult) {
             result = {
                 title: animeResult.title,
@@ -133,12 +134,26 @@ async function getMediaInfo(filename, filepath) {
             };
             source = 'jikan';
 
-            // Try to get episode title
+            // Try to get episode title from Jikan
             if (animeResult.mal_id && parsed.episode) {
                 const epInfo = await jikan.getEpisodeInfo(animeResult.mal_id, parsed.episode);
                 if (epInfo) {
                     result.episodeName = epInfo.title;
                 }
+            }
+        }
+    }
+
+    // If TMDB found show but no episode name, try Jikan for episode info (common for anime)
+    if (result && !result.episodeName && parsed.episode && (parsed.type === 'tv' || fromFolder)) {
+        log.info(`INFO: TMDB has no episode info, trying Jikan...`);
+        // Pass season to find correct season entry
+        const animeResult = await jikan.searchAnime(parsed.title, parsed.season);
+        if (animeResult && animeResult.mal_id) {
+            const epInfo = await jikan.getEpisodeInfo(animeResult.mal_id, parsed.episode);
+            if (epInfo) {
+                result.episodeName = epInfo.title;
+                log.info(`INFO: Jikan found episode: "${epInfo.title}"`);
             }
         }
     }
