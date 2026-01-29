@@ -68,15 +68,6 @@
             color: #909296;
         }
 
-        .correct-btn {
-            background: #fab005;
-            padding: 6px 12px;
-            font-size: 0.75rem;
-        }
-
-        .correct-btn:hover {
-            background: #e0a005;
-        }
 
         .controls {
             background: #25262b;
@@ -214,7 +205,6 @@
             <h2 id="statusTitle">Idle</h2>
             <p id="statusDetail">Waiting for MPC-HC...</p>
         </div>
-        <button id="correctBtn" class="correct-btn" style="display: none;">Fix Title</button>
     </div>
 
     <div class="controls">
@@ -232,20 +222,7 @@
         <div>[System] Dashboard initialized...</div>
     </div>
 
-    <!-- Title Correction Modal -->
-    <div id="correctModal" class="modal">
-        <div class="modal-content">
-            <h3>Correct Title</h3>
-            <p style="font-size: 0.85rem; color: #909296; margin-bottom: 10px;">
-                Detected: <span id="detectedTitle" style="color: #fab005;"></span>
-            </p>
-            <input type="text" id="correctInput" placeholder="Enter correct title...">
-            <div class="modal-actions">
-                <button class="cancel" id="cancelCorrect">Cancel</button>
-                <button id="saveCorrect">Save</button>
-            </div>
-        </div>
-    </div>
+
 
     <script>
         const { ipcRenderer } = require('electron');
@@ -256,14 +233,6 @@
         const logContainer = document.getElementById('logContainer');
         const startupToggle = document.getElementById('startupToggle');
         const updateBtn = document.getElementById('updateBtn');
-        const correctBtn = document.getElementById('correctBtn');
-        const correctModal = document.getElementById('correctModal');
-        const detectedTitle = document.getElementById('detectedTitle');
-        const correctInput = document.getElementById('correctInput');
-        const cancelCorrect = document.getElementById('cancelCorrect');
-        const saveCorrect = document.getElementById('saveCorrect');
-
-        let currentMedia = null;
 
         // Initial state
         ipcRenderer.send('get-startup');
@@ -293,60 +262,21 @@
         ipcRenderer.on('rpc-status', (event, data) => {
             statusTitle.textContent = data.state; // e.g. "Watching"
             statusDetail.textContent = data.details || '';
-            currentMedia = data;
 
             if (data.state === 'Idle' || data.state === 'Unknown') {
                 statusIcon.classList.remove('active');
                 statusIcon.classList.remove('warning');
-                correctBtn.style.display = 'none';
             } else {
                 statusIcon.classList.add('active');
-                correctBtn.style.display = 'block';
-
-                // Show warning for uncertain matches
                 if (data.uncertain) {
                     statusIcon.classList.add('warning');
-                    correctBtn.textContent = '⚠️ Fix Title';
-                    correctBtn.style.background = '#fa5252';
                 } else {
                     statusIcon.classList.remove('warning');
-                    correctBtn.textContent = 'Fix Title';
-                    correctBtn.style.background = '';
                 }
             }
         });
 
-        // Title correction
-        correctBtn.addEventListener('click', () => {
-            if (currentMedia && currentMedia.details) {
-                detectedTitle.textContent = currentMedia.details;
-                correctInput.value = currentMedia.details;
-                correctModal.classList.add('active');
-                correctInput.focus();
-                correctInput.select();
-            }
-        });
 
-        cancelCorrect.addEventListener('click', () => {
-            correctModal.classList.remove('active');
-        });
-
-        saveCorrect.addEventListener('click', () => {
-            const newTitle = correctInput.value.trim();
-            if (newTitle && currentMedia) {
-                // Save the override - using the detected title as key
-                ipcRenderer.send('save-title-override', {
-                    folderPath: currentMedia.details,
-                    correctTitle: newTitle
-                });
-                log(`Title correction saved: "${currentMedia.details}" → "${newTitle}"`);
-                correctModal.classList.remove('active');
-            }
-        });
-
-        ipcRenderer.on('title-override-saved', () => {
-            log('Title override saved! Will apply on next detection.');
-        });
 
         function log(msg) {
             const div = document.createElement('div');
