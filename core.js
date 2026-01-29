@@ -215,23 +215,31 @@ const updatePresence = async (res, rpc) => {
         });
     }
 
-    // Build display strings (Plex-style layout)
+    // Build display strings (Crunchyroll-style layout)
     let displayTitle = mediaInfo?.title || filename.replace(/\.[^/.]+$/, '') || mpcFork;
+    let displayDetails = null; // null = won't be sent to Discord
     let displayState = '';
 
     if (mediaInfo?.type === 'tv' && mediaInfo.season && mediaInfo.episode) {
-        displayState = `S${mediaInfo.season} • E${mediaInfo.episode}`;
+        // TV Shows: Details = Episode info, State = Show name
+        displayDetails = `S${mediaInfo.season}E${mediaInfo.episode}`;
         if (mediaInfo.episodeName) {
-            displayState += ` - ${mediaInfo.episodeName}`;
+            displayDetails += ` - ${mediaInfo.episodeName}`;
         }
+        displayDetails = displayDetails.trimStr(128);
+        displayState = displayTitle.trimStr(128);
+    } else {
+        // Movies: Details = blank (Discord requires 2+ chars), State = Title only
+        displayDetails = "  ";
+        displayState = displayTitle.trimStr(128);
     }
-    // Ensure state is never empty - Discord requires non-empty fields
-    displayState = displayState.trimStr(128) || `${position} / ${duration}` || 'Playing';
+    // Ensure state is never empty
+    displayState = displayState || 'Playing';
 
     // Build payload
     let payload = {
         type: 3, // Watching
-        details: displayTitle.trimStr(128),
+        details: displayDetails,
         state: displayState,
         assets: {
             large_image: mediaInfo?.posterUrl || (mpcFork === 'MPC-BE' ? 'mpcbe_logo' : 'default'),
@@ -249,15 +257,9 @@ const updatePresence = async (res, rpc) => {
         payload.assets.large_image = mpcFork === 'MPC-BE' ? 'mpcbe_logo' : 'default';
         payload.assets.large_text = mpcFork;
     } else if (state === '1') {
-        // PAUSED - show position/duration for movies
-        if (!mediaInfo?.type || mediaInfo.type !== 'tv') {
-            payload.state = position && duration ? `${position} / ${duration}` : 'Paused';
-        }
+        // PAUSED - no additional changes needed
     } else if (state === '2') {
-        // PLAYING - show position/duration for movies, use timestamps
-        if (!mediaInfo?.type || mediaInfo.type !== 'tv') {
-            payload.state = position && duration ? `${position} / ${duration}` : 'Playing';
-        }
+        // PLAYING - add timestamps for live progress bar
 
         // Add timestamps for live progress bar
         if (position && duration) {
