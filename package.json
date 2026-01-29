@@ -34,8 +34,7 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "runAfterFinish": true,
-      "include": "build/installer.nsh",
-      "disableWebInstaller": true
+      "include": "build/installer.nsh"
     }
   },
   "license": "MIT",
