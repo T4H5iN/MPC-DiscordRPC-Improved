@@ -196,7 +196,7 @@
 <body>
     <h1>
         MPC-DiscordRPC
-        <span style="font-size: 0.8rem; color: #909296;">v0.1.1</span>
+        <span style="font-size: 0.8rem; color: #909296;">v0.1.2</span>
     </h1>
 
     <div class="status-card">
@@ -215,6 +215,7 @@
         <div class="control-item">
             <span>App Version</span>
             <button id="updateBtn">Check for Updates</button>
+            <button id="cancelUpdateBtn" style="display:none; background: #fa5252; margin-left: 10px;">Cancel</button>
         </div>
         <div class="control-item">
             <span>Window Close Action</span>
@@ -259,8 +260,33 @@
             log('Checking for updates...');
         });
 
+        const cancelUpdateBtn = document.getElementById('cancelUpdateBtn');
+
+        cancelUpdateBtn.addEventListener('click', () => {
+            ipcRenderer.send('cancel-update');
+        });
+
+        function resetUpdateUI() {
+            updateBtn.style.display = 'inline-block';
+            cancelUpdateBtn.style.display = 'none';
+        }
+
         ipcRenderer.on('update-msg', (event, msg) => {
             log(msg);
+
+            if (msg.includes('found! Downloading')) {
+                updateBtn.style.display = 'none';
+                cancelUpdateBtn.style.display = 'inline-block';
+            }
+
+            if (msg.includes('cancelled') || msg.includes('error') || msg.includes('No updates')) {
+                resetUpdateUI();
+            }
+
+            if (msg.includes('Downloading:')) {
+                return;
+            }
+
             alert(msg);
         });
 

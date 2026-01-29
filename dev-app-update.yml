@@ -1,0 +1,4 @@
+provider: github
+owner: T4H5iN
+repo: MPC-DiscordRPC-Improved
+updaterCacheDirName: MPC-DiscordRPC-updater

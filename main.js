@@ -4,12 +4,17 @@ const Store = require('electron-store');
 const { autoUpdater } = require('electron-updater');
 const RPCManager = require('./rpcManager');
 
+if (!app.isPackaged) {
+    autoUpdater.forceDevUpdateConfig = true;
+}
+
 app.disableHardwareAcceleration();
 
 const store = new Store();
 let mainWindow;
 let rpcManager;
 let tray;
+let updateCancellationToken;
 
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
@@ -92,7 +97,7 @@ function startRpcManager() {
     rpcManager = new RPCManager();
 
     rpcManager.on('log', (msg) => {
-        if (mainWindow) {
+        if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('rpc-log', msg);
 
             const isUncertain = msg.includes('NO POSTER - uncertain') || msg.includes('No API match found');
@@ -178,7 +183,26 @@ ipcMain.on('get-startup', (event) => {
 });
 
 ipcMain.on('check-update', () => {
-    autoUpdater.checkForUpdatesAndNotify();
+    autoUpdater.checkForUpdates().then((res) => {
+        updateCancellationToken = res?.cancellationToken;
+        if (res?.downloadPromise) {
+            res.downloadPromise.catch(err => {
+                if (err.message !== 'cancelled') console.error('Download error:', err);
+            });
+        }
+    }).catch(err => {
+        if (err.message !== 'cancelled') {
+            console.error('Update check failed:', err);
+        }
+    });
+});
+
+ipcMain.on('cancel-update', () => {
+    if (updateCancellationToken) {
+        updateCancellationToken.cancel();
+        updateCancellationToken = null;
+        mainWindow.webContents.send('update-msg', 'Update cancelled.');
+    }
 });
 
 ipcMain.on('reset-close-action', () => {
@@ -205,8 +229,14 @@ ipcMain.on('delete-title-override', (event, folderPath) => {
 });
 
 autoUpdater.on('update-available', () => {
-    mainWindow.webContents.send('update-msg', 'Update available!');
+    mainWindow.webContents.send('update-msg', 'Update found! Downloading...');
 });
+
+autoUpdater.on('download-progress', (progressObj) => {
+    const msg = `Downloading: ${Math.round(progressObj.percent)}%`;
+    mainWindow.webContents.send('update-msg', msg);
+});
+
 autoUpdater.on('update-not-available', () => {
     mainWindow.webContents.send('update-msg', 'No updates available.');
 });
