@@ -1,12 +1,14 @@
 const { app, BrowserWindow, ipcMain, Tray, Menu, dialog } = require('electron');
 const path = require('path');
-const { fork } = require('child_process');
 const Store = require('electron-store');
 const { autoUpdater } = require('electron-updater');
+const RPCManager = require('./rpcManager');
+
+app.disableHardwareAcceleration();
 
 const store = new Store();
 let mainWindow;
-let rpcWorker;
+let rpcManager;
 let tray;
 
 const gotTheLock = app.requestSingleInstanceLock();
@@ -22,7 +24,7 @@ if (!gotTheLock) {
 
     app.whenReady().then(() => {
         createWindow();
-        startRpcWorker();
+        startRpcManager();
 
         if (store.get('autoLaunch', false)) {
             app.setLoginItemSettings({ openAtLogin: true });
@@ -86,14 +88,10 @@ function createWindow() {
     });
 }
 
-function startRpcWorker() {
-    rpcWorker = fork(path.join(__dirname, 'index.js'), [], {
-        stdio: ['pipe', 'pipe', 'pipe', 'ipc']
-    });
+function startRpcManager() {
+    rpcManager = new RPCManager();
 
-    rpcWorker.stdout.on('data', (data) => {
-        const msg = data.toString().trim();
-        console.log(`[RPC] ${msg}`);
+    rpcManager.on('log', (msg) => {
         if (mainWindow) {
             mainWindow.webContents.send('rpc-log', msg);
 
@@ -119,9 +117,7 @@ function startRpcWorker() {
         }
     });
 
-    rpcWorker.stderr.on('data', (data) => {
-        console.error(`[RPC Error] ${data.toString()}`);
-    });
+    rpcManager.start();
 }
 
 function setupTray() {
@@ -218,7 +214,7 @@ autoUpdater.on('update-downloaded', () => {
 
 app.on('before-quit', () => {
     app.isQuiting = true;
-    if (rpcWorker) rpcWorker.kill();
+    if (rpcManager) rpcManager.stop();
 });
 
 app.on('activate', () => {
