@@ -113,14 +113,6 @@ class DiscordIPC extends EventEmitter {
             this.connected = false;
             this.ready = false;
             this.emit('disconnected');
-
-            if (!this.isReconnecting) {
-                this.isReconnecting = true;
-                this.reconnectTimer = setTimeout(() => {
-                    this.isReconnecting = false;
-                    this.connect().catch(() => { });
-                }, 5000);
-            }
         });
 
         this.socket.on('error', (err) => {

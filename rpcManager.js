@@ -12,7 +12,7 @@ class RPCManager extends events.EventEmitter {
         super();
         this.active = false;
         this.discord = null;
-        this.isReconnecting = false;
+        this.connecting = false;
         this.mpcServerLoop = null;
         this.discordRPCLoop = null;
         this.uri = `http://127.0.0.1:${config.port}/variables.html`;
@@ -105,35 +105,35 @@ class RPCManager extends events.EventEmitter {
 
     async initDiscord() {
         if (this.discord && this.discord.isReady()) return;
+        if (this.connecting) return;
 
-        this.discord = new DiscordIPC(clientId);
-
-        this.discord.on('ready', () => {
-            clearInterval(this.discordRPCLoop);
-            this.isReconnecting = false;
-            this.log('info', 'INFO: Connected to Discord. Listening on ' + this.uri);
-            this.checkMPCEndpoint();
-            this.mpcServerLoop = setInterval(() => this.checkMPCEndpoint(), 3000);
-        });
-
-        this.discord.on('disconnected', () => {
-            clearInterval(this.mpcServerLoop);
-            this.active = false;
-            if (!this.isReconnecting) {
-                this.isReconnecting = true;
-                this.log('warn', 'WARN: Discord disconnected. Reconnecting...');
-                setTimeout(() => this.initDiscord(), 5000);
-            }
-        });
+        this.connecting = true;
 
         try {
+            this.discord = new DiscordIPC(clientId);
+
+            this.discord.on('ready', () => {
+                this.log('info', 'INFO: Connected to Discord. Listening on ' + this.uri);
+                this.checkMPCEndpoint();
+
+                if (this.mpcServerLoop) clearInterval(this.mpcServerLoop);
+                this.mpcServerLoop = setInterval(() => this.checkMPCEndpoint(), 3000);
+            });
+
+            this.discord.on('disconnected', () => {
+                if (this.mpcServerLoop) clearInterval(this.mpcServerLoop);
+                this.mpcServerLoop = null;
+                this.active = false;
+                this.log('warn', 'WARN: Discord disconnected. Reconnecting...');
+                this.discord = null;
+            });
+
             await this.discord.connect();
         } catch (err) {
-            if (!this.isReconnecting) {
-                this.log('warn', 'WARN: Discord not available. Retrying...');
-                this.isReconnecting = true;
-            }
+            this.log('warn', 'WARN: Discord not available. Retrying in background...');
             this.discord = null;
+        } finally {
+            this.connecting = false;
         }
     }
 }

@@ -13,6 +13,7 @@ Discord Rich Presence for Media Player Classic with **TMDB & Jikan integration**
 - **Smart parsing** - Handles various filename formats (SubsPlease, Erai-raws, standard S01E01, etc.)
 - **System tray** - Runs in background with tray icon
 - **Windows startup** - Optional auto-start with Windows
+- **Auto-Reconnect** - Automatically reconnects to Discord when it comes back online
 
 ## How It Works
 
