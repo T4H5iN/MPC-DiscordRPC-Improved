@@ -2,7 +2,7 @@
 
 Discord Rich Presence for Media Player Classic with **TMDB & Jikan integration** for movie/TV show posters and metadata.
 
-![Discord Presence Example](https://i.ibb.co.com/gbzKGfng/image.png)
+![Discord Presence Example](https://i.ibb.co.com/6RyzjHh0/image.png) ![Discord Presence Example](https://i.ibb.co.com/FL4ZLNvS/image.png)
 
 ## Features
 
@@ -68,7 +68,7 @@ Output: `dist/win-unpacked/MPC-DiscordRPC.exe`
 npm run dist
 ```
 
-Output: `dist/MPC-DiscordRPC Setup.exe`
+Output: `dist/MPC-DiscordRPC-<version>-windows-x64.exe` `dist/MPC-DiscordRPC-<version>-windows-x64.zip`
 
 ## Troubleshooting
 
