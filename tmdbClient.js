@@ -33,7 +33,6 @@ function loadCache() {
         if (fs.existsSync(CACHE_FILE)) {
             const data = fs.readFileSync(CACHE_FILE, 'utf8');
             cache = JSON.parse(data);
-            // Clean expired entries
             const now = Date.now();
             for (const key of Object.keys(cache)) {
                 if (now - cache[key].timestamp > CACHE_DURATION) {
@@ -92,7 +91,7 @@ function setCache(key, data) {
  */
 async function searchMovie(title, year = null) {
     if (!accessToken) {
-        init(); // Auto-initialize with default token
+        init();
     }
 
     const cacheKey = `movie:${title}:${year || ''}`;
@@ -146,7 +145,7 @@ async function searchMovie(title, year = null) {
  */
 async function searchTV(title, year = null) {
     if (!accessToken) {
-        init(); // Auto-initialize with default token
+        init();
     }
 
     const cacheKey = `tv:${title}:${year || ''}`;
@@ -201,7 +200,7 @@ async function searchTV(title, year = null) {
  */
 async function getEpisode(tvId, season, episode) {
     if (!accessToken) {
-        init(); // Auto-initialize with default token
+        init();
     }
 
     const cacheKey = `episode:${tvId}:${season}:${episode}`;

@@ -10,21 +10,17 @@ const log = require('fancy-log'),
     jikan = require('./jikanClient'),
     { JSDOM } = jsdom;
 
-// Trim strings to Discord's 128 character limit
 String.prototype.trimStr = function (length) {
     return this.length > length ? this.substring(0, length - 3) + "..." : this;
 };
 
-// Playback state tracking
 let playback = {
     filename: '', position: '', duration: '', state: '',
     prevState: '', prevPosition: '', prevFilename: ''
 };
 
-// Cache for TMDB metadata
 let mediaCache = {};
 
-// State display strings
 const states = {
     '-1': { string: 'Idling', stateKey: 'stop_small' },
     '0': { string: 'Stopped', stateKey: 'stop_small' },
@@ -59,21 +55,16 @@ function extractEpisodeNumber(filename) {
 function findShowNameFromFolders(filepath) {
     const pathParts = filepath.split(/[\/\\]/);
 
-    // Start from parent folder and go up to great-grandparent (3 levels)
     for (let i = pathParts.length - 2; i >= Math.max(0, pathParts.length - 4); i--) {
         const folderName = pathParts[i];
 
-        // Skip drive letters and empty parts
         if (!folderName || folderName.match(/^[A-Z]:$/i)) continue;
 
-        // Skip generic folder names
         const genericFolders = ['movies', 'tv', 'anime', 'videos', 'downloads', 'torrents', 'media', 'shows', 'series'];
         if (genericFolders.includes(folderName.toLowerCase())) continue;
 
-        // Parse folder name to clean it
         const parsed = parseFilename(folderName + '.mkv');
 
-        // If folder name looks like a valid show title (not episode-only)
         if (parsed.title && parsed.title.length > 2 && !isEpisodeOnlyFilename(parsed.title)) {
             log.info(`INFO: Found show name from folder: "${parsed.title}" (level: ${pathParts.length - 1 - i})`);
             return parsed.title;
@@ -91,22 +82,19 @@ function findShowNameFromFolders(filepath) {
 async function getMediaInfo(filename, filepath) {
     if (mediaCache[filename]) return mediaCache[filename];
 
-    // Parse filename first
     const filenameWithoutExt = filename.replace(/\.[^/.]+$/, '');
     let parsed = parseFilename(filename);
     let fromFolder = false;
 
-    // Check if filename is episode-only (e.g., "01 - Bust Through the Heavens.mkv")
     if (isEpisodeOnlyFilename(filenameWithoutExt)) {
         const episodeNum = extractEpisodeNumber(filenameWithoutExt);
 
-        // Search folder hierarchy for show name
         const showName = findShowNameFromFolders(filepath);
 
         if (showName) {
             parsed.title = showName;
             parsed.episode = episodeNum;
-            parsed.season = 1; // Default to season 1 for anime
+            parsed.season = 1;
             parsed.type = 'tv';
             fromFolder = true;
             log.info(`INFO: From folder hierarchy - "${parsed.title}" S${parsed.season}E${parsed.episode}`);
@@ -117,14 +105,11 @@ async function getMediaInfo(filename, filepath) {
         log.info(`INFO: From filename - "${parsed.title}" (${parsed.type}${parsed.season ? `, S${parsed.season}E${parsed.episode}` : ''})`);
     }
 
-    // Search TMDB first
     let result = await tmdb.searchMedia(parsed);
     let source = 'tmdb';
 
-    // If TMDB fails completely, try Jikan for anime
     if (!result && (parsed.type === 'tv' || fromFolder)) {
         log.info(`INFO: TMDB miss, trying Jikan for anime...`);
-        // Pass season to find correct season entry
         const animeResult = await jikan.searchAnime(parsed.title, parsed.season);
         if (animeResult) {
             result = {
@@ -134,7 +119,6 @@ async function getMediaInfo(filename, filepath) {
             };
             source = 'jikan';
 
-            // Try to get episode title from Jikan
             if (animeResult.mal_id && parsed.episode) {
                 const epInfo = await jikan.getEpisodeInfo(animeResult.mal_id, parsed.episode);
                 if (epInfo) {
@@ -144,10 +128,8 @@ async function getMediaInfo(filename, filepath) {
         }
     }
 
-    // If TMDB found show but no episode name, try Jikan for episode info (common for anime)
     if (result && !result.episodeName && parsed.episode && (parsed.type === 'tv' || fromFolder)) {
         log.info(`INFO: TMDB has no episode info, trying Jikan...`);
-        // Pass season to find correct season entry
         const animeResult = await jikan.searchAnime(parsed.title, parsed.season);
         if (animeResult && animeResult.mal_id) {
             const epInfo = await jikan.getEpisodeInfo(animeResult.mal_id, parsed.episode);
@@ -158,7 +140,6 @@ async function getMediaInfo(filename, filepath) {
         }
     }
 
-    // Determine if match is uncertain (no poster = likely wrong)
     const uncertain = !result?.posterUrl;
 
     const info = {
@@ -173,7 +154,6 @@ async function getMediaInfo(filename, filepath) {
         uncertain: uncertain
     };
 
-    // Log the result with source info
     if (result) {
         log.info(`INFO: ${source.toUpperCase()} found: "${info.title}"${info.posterUrl ? ' (with poster)' : ' (NO POSTER - uncertain)'}`);
     } else {
@@ -209,7 +189,6 @@ const updatePresence = async (res, rpc) => {
     const mpcFork = res.headers.server.replace(' WebServer', '');
     const { document } = new JSDOM(res.data).window;
 
-    // Get playback data
     const filepath = document.getElementById('filepath').textContent;
     const filename = filepath.split("\\").pop().trimStr(128);
     const state = document.getElementById('state').textContent;
@@ -218,25 +197,20 @@ const updatePresence = async (res, rpc) => {
 
     playback = { ...playback, filename, state, duration, position };
 
-    // Get media info (use cache first, fetch in background for new files)
     let mediaInfo = mediaCache[filename] || null;
 
     if (state !== '-1' && state !== '0' && !mediaInfo) {
-        // For new files, kick off API fetch but don't block
         getMediaInfo(filename, filepath).then(info => {
-            // Will be used on next poll
         }).catch(err => {
             log.error('ERROR:', err.message);
         });
     }
 
-    // Build display strings (Crunchyroll-style layout)
     let displayTitle = mediaInfo?.title || filename.replace(/\.[^/.]+$/, '') || mpcFork;
-    let displayDetails = null; // null = won't be sent to Discord
+    let displayDetails = null;
     let displayState = '';
 
     if (mediaInfo?.type === 'tv' && mediaInfo.season && mediaInfo.episode) {
-        // TV Shows: Details = Episode info, State = Show name
         displayDetails = `S${mediaInfo.season}E${mediaInfo.episode}`;
         if (mediaInfo.episodeName) {
             displayDetails += ` - ${mediaInfo.episodeName}`;
@@ -244,16 +218,13 @@ const updatePresence = async (res, rpc) => {
         displayDetails = displayDetails.trimStr(128);
         displayState = displayTitle.trimStr(128);
     } else {
-        // Movies: Details = blank (Discord requires 2+ chars), State = Title only
         displayDetails = "  ";
         displayState = displayTitle.trimStr(128);
     }
-    // Ensure state is never empty
     displayState = displayState || 'Playing';
 
-    // Build payload
     let payload = {
-        type: 3, // Watching
+        type: 3,
         details: displayDetails,
         state: displayState,
         assets: {
@@ -264,19 +235,13 @@ const updatePresence = async (res, rpc) => {
         }
     };
 
-    // Handle state-specific changes
     if (state === '-1') {
-        // Idling
         payload.details = undefined;
         payload.state = 'Idling';
         payload.assets.large_image = mpcFork === 'MPC-BE' ? 'mpcbe_logo' : 'default';
         payload.assets.large_text = mpcFork;
     } else if (state === '1') {
-        // PAUSED - no additional changes needed
     } else if (state === '2') {
-        // PLAYING - add timestamps for live progress bar
-
-        // Add timestamps for live progress bar
         if (position && duration) {
             const positionMs = toSeconds(position) * 1000;
             const durationMs = toSeconds(duration) * 1000;
@@ -289,14 +254,12 @@ const updatePresence = async (res, rpc) => {
         }
     }
 
-    // Final safeguard - state must never be empty
     if (!payload.state || payload.state.trim() === '') {
         payload.state = states[state]?.string || 'Playing';
     }
 
     payload.status_display_type = 1;
 
-    // Send update when state, filename changes, or we have media info
     const shouldUpdate = (state !== playback.prevState) ||
         (filename !== playback.prevFilename) ||
         (mediaInfo && !playback.prevMediaInfo);
@@ -307,10 +270,8 @@ const updatePresence = async (res, rpc) => {
         playback.prevMediaInfo = !!mediaInfo;
     }
 
-    // Save previous state
     playback.prevState = state;
     playback.prevPosition = position;
-    // Reset media info flag when file changes
     if (filename !== playback.prevFilename) {
         playback.prevMediaInfo = false;
     }

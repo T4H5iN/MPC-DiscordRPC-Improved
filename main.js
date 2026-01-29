@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, Tray, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, dialog } = require('electron');
 const path = require('path');
 const { fork } = require('child_process');
 const Store = require('electron-store');
@@ -9,7 +9,6 @@ let mainWindow;
 let rpcWorker;
 let tray;
 
-// Single instance lock
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
     app.quit();
@@ -24,9 +23,7 @@ if (!gotTheLock) {
     app.whenReady().then(() => {
         createWindow();
         startRpcWorker();
-        setupTray();
 
-        // Auto-launch check
         if (store.get('autoLaunch', false)) {
             app.setLoginItemSettings({ openAtLogin: true });
         }
@@ -43,22 +40,53 @@ function createWindow() {
         },
         autoHideMenuBar: true,
         backgroundColor: '#1a1b1e',
-        icon: path.join(__dirname, 'assets/icon.ico') // Will fallback if missing
+        icon: path.join(__dirname, 'assets/icon.ico')
     });
 
     mainWindow.loadFile('src/index.html');
 
-    mainWindow.on('close', (event) => {
-        if (!app.isQuiting) {
-            event.preventDefault();
+    mainWindow.on('close', async (event) => {
+        if (app.isQuiting) return;
+
+        event.preventDefault();
+
+        const closeAction = store.get('closeAction');
+
+        if (closeAction === 'minimize') {
+            if (!tray) setupTray();
             mainWindow.hide();
+        } else if (closeAction === 'exit') {
+            app.isQuiting = true;
+            app.quit();
+        } else {
+            const { response, checkboxChecked } = await dialog.showMessageBox(mainWindow, {
+                type: 'question',
+                buttons: ['Minimize to Tray', 'Exit App', 'Cancel'],
+                defaultId: 0,
+                cancelId: 2,
+                title: 'Close Action',
+                message: 'Do you want to minimize to the system tray or exit the application?',
+                checkboxLabel: 'Remember my choice',
+            });
+
+            if (response === 2) return;
+
+            if (checkboxChecked) {
+                store.set('closeAction', response === 0 ? 'minimize' : 'exit');
+            }
+
+            if (response === 0) {
+                if (!tray) setupTray();
+                mainWindow.hide();
+            } else {
+                app.isQuiting = true;
+                app.quit();
+            }
         }
-        return false;
     });
 }
 
 function startRpcWorker() {
-    // Fork the existing index.js as a background process
     rpcWorker = fork(path.join(__dirname, 'index.js'), [], {
         stdio: ['pipe', 'pipe', 'pipe', 'ipc']
     });
@@ -69,10 +97,8 @@ function startRpcWorker() {
         if (mainWindow) {
             mainWindow.webContents.send('rpc-log', msg);
 
-            // Detect uncertain matches
             const isUncertain = msg.includes('NO POSTER - uncertain') || msg.includes('No API match found');
 
-            // Parse status for simple display
             if (msg.includes('Watching -')) {
                 const details = msg.split('Watching - ')[1]?.split(' - ')[0];
                 mainWindow.webContents.send('rpc-status', {
@@ -99,13 +125,13 @@ function startRpcWorker() {
 }
 
 function setupTray() {
+    if (tray) return;
+
     const { nativeImage } = require('electron');
 
-    // Simple 16x16 green circle icon (PNG base64)
-    const iconData = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAABHNCSVQICAgIfAhkiAAAAAlwSFlzAAAAbwAAAG8B8aLcQwAAABl0RVh0U29mdHdhcmUAd3d3Lmlua3NjYXBlLm9yZ5vuPBoAAABfSURBVDiNY/j//z8DDjByL4z+zwABjMQowGYAMwMDA8P/f/8Y/v/7x8DAwMjAwMDIiNUAZgYGBgZmJkYGBiYmRgYmJuyCWL3AzMTEwMjExMDIyIjdAFJdQBEgxQAilgEAD6UUEy7qpIIAAAAASUVORK5CYII=';
-
     try {
-        let icon = nativeImage.createFromDataURL(iconData);
+        const iconPath = path.join(__dirname, 'assets', 'icon.png');
+        let icon = nativeImage.createFromPath(iconPath);
         icon = icon.resize({ width: 16, height: 16 });
 
         tray = new Tray(icon);
@@ -146,7 +172,6 @@ function setupTray() {
     }
 }
 
-// IPC Handlers
 ipcMain.on('toggle-startup', (event, enable) => {
     store.set('autoLaunch', enable);
     app.setLoginItemSettings({ openAtLogin: enable });
@@ -160,9 +185,11 @@ ipcMain.on('check-update', () => {
     autoUpdater.checkForUpdatesAndNotify();
 });
 
-// User title override handlers
+ipcMain.on('reset-close-action', () => {
+    store.delete('closeAction');
+});
+
 ipcMain.on('save-title-override', (event, data) => {
-    // data = { folderPath: string, correctTitle: string }
     const overrides = store.get('titleOverrides', {});
     overrides[data.folderPath] = data.correctTitle;
     store.set('titleOverrides', overrides);
@@ -181,7 +208,6 @@ ipcMain.on('delete-title-override', (event, folderPath) => {
     event.reply('title-override-deleted', true);
 });
 
-// Update events
 autoUpdater.on('update-available', () => {
     mainWindow.webContents.send('update-msg', 'Update available!');
 });

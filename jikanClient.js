@@ -6,10 +6,7 @@
 
 const axios = require('axios');
 const log = require('fancy-log');
-
 const JIKAN_BASE = 'https://api.jikan.moe/v4';
-
-// Simple cache to avoid repeated API calls
 const cache = {};
 const episodeCache = {};
 
@@ -39,14 +36,13 @@ function extractSeasonFromTitle(title) {
         const match = title.match(pattern);
         if (match) {
             const value = match[1];
-            // Handle Roman numerals
             const romanMap = { 'II': 2, 'III': 3, 'IV': 4, 'V': 5, 'VI': 6 };
             if (romanMap[value]) return romanMap[value];
             return parseInt(value, 10);
         }
     }
 
-    return null; // No season indicator = likely season 1
+    return null;
 }
 
 /**
@@ -70,7 +66,7 @@ async function searchAnime(title, season = null) {
         const response = await axios.get(`${JIKAN_BASE}/anime`, {
             params: {
                 q: title,
-                limit: 15, // Get more results to find correct season
+                limit: 15,
                 sfw: true
             },
             timeout: 8000
@@ -85,12 +81,10 @@ async function searchAnime(title, season = null) {
         const titleLower = title.toLowerCase();
         let bestMatch = null;
 
-        // First pass: find entries that match the title
         const titleMatches = results.filter(anime => {
             const animeTitle = anime.title?.toLowerCase() || '';
             const englishTitle = anime.title_english?.toLowerCase() || '';
 
-            // Check if the base title matches (ignoring season suffixes)
             const baseTitle = titleLower.replace(/\s*(s\d+|season\s*\d+|\d+(?:st|nd|rd|th)\s+season).*$/i, '').trim();
 
             return animeTitle.includes(baseTitle) ||
@@ -99,13 +93,10 @@ async function searchAnime(title, season = null) {
         });
 
         if (titleMatches.length === 0) {
-            // Fall back to first result if no title matches
             titleMatches.push(results[0]);
         }
 
-        // Second pass: find the correct season
         if (season && season > 1) {
-            // Look for explicit season match
             for (const anime of titleMatches) {
                 const animeSeason = extractSeasonFromTitle(anime.title) ||
                     extractSeasonFromTitle(anime.title_english);
@@ -117,9 +108,7 @@ async function searchAnime(title, season = null) {
             }
         }
 
-        // If no season match found, use first title match (usually S1)
         if (!bestMatch) {
-            // Prefer entries without season suffix for S1
             if (!season || season === 1) {
                 bestMatch = titleMatches.find(anime => {
                     const s = extractSeasonFromTitle(anime.title) || extractSeasonFromTitle(anime.title_english);
@@ -175,13 +164,11 @@ async function getEpisodeInfo(malId, episodeNum) {
     }
 
     try {
-        // Fetch episode list (paginated, 100 per page)
         const response = await axios.get(`${JIKAN_BASE}/anime/${malId}/episodes`, {
             timeout: 5000
         });
 
         if (response.data?.data) {
-            // Find the episode by mal_id (which is the episode number)
             const episode = response.data.data.find(ep => ep.mal_id === episodeNum);
 
             if (episode) {
@@ -196,7 +183,6 @@ async function getEpisodeInfo(malId, episodeNum) {
         }
         return null;
     } catch (err) {
-        // Episode info not found is common, don't log error
         return null;
     }
 }

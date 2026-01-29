@@ -11,12 +11,9 @@ const axios = require('axios').default,
 	updatePresence = require('./core'),
 	events = require('events'),
 	config = require('./config'),
-	tmdb = require('./tmdbClient');
+	tmdb = require('./tmdbClient'),
+	clientId = '1466028230380224718';
 
-// Discord Application ID (hardcoded for "Watching" display)
-const clientId = '1466028230380224718';
-
-// Initialize TMDB client (uses hardcoded Read Access Token)
 tmdb.init();
 log.info('INFO: TMDB API initialized');
 
@@ -27,7 +24,6 @@ let mediaEmitter = new events.EventEmitter(),
 	discord = null,
 	isReconnecting = false;
 
-// Validate MPC port
 if (isNaN(config.port)) {
 	throw new Error('Port is empty or invalid! Please set a valid port number in config.js');
 }
@@ -36,7 +32,6 @@ const uri = `http://127.0.0.1:${config.port}/variables.html`;
 
 log.info('INFO: Trying to connect to Discord...');
 
-// Connected to MPC - poll every 3 seconds
 mediaEmitter.on('CONNECTED', async res => {
 	clearInterval(mpcServerLoop);
 	mpcServerLoop = setInterval(checkMPCEndpoint, 3000);
@@ -46,7 +41,6 @@ mediaEmitter.on('CONNECTED', async res => {
 	active = await updatePresence(res, discord);
 });
 
-// MPC disconnected - clear presence and retry every 15 seconds
 mediaEmitter.on('CONN_ERROR', () => {
 	if (active) {
 		log.warn('WARN: MPC disconnected. Clearing presence...');
@@ -59,7 +53,6 @@ mediaEmitter.on('CONN_ERROR', () => {
 	mpcServerLoop = setInterval(checkMPCEndpoint, 15000);
 });
 
-// Discord connected - start MPC polling
 mediaEmitter.on('discordConnected', () => {
 	clearInterval(discordRPCLoop);
 	isReconnecting = false;
@@ -68,7 +61,6 @@ mediaEmitter.on('discordConnected', () => {
 	mpcServerLoop = setInterval(checkMPCEndpoint, 3000);
 });
 
-// Discord disconnected - stop polling, reconnect
 mediaEmitter.on('discordDisconnected', () => {
 	clearInterval(mpcServerLoop);
 	active = false;
@@ -79,14 +71,12 @@ mediaEmitter.on('discordDisconnected', () => {
 	}
 });
 
-// Check MPC Web Interface
 function checkMPCEndpoint() {
 	axios.get(uri)
 		.then(res => mediaEmitter.emit('CONNECTED', res))
 		.catch(() => mediaEmitter.emit('CONN_ERROR'));
 }
 
-// Initialize Discord IPC connection
 async function initDiscord() {
 	if (discord && discord.isReady()) return;
 
@@ -105,13 +95,11 @@ async function initDiscord() {
 	}
 }
 
-// Start
 initDiscord();
 discordRPCLoop = setInterval(() => {
 	if (!discord || !discord.isReady()) initDiscord();
 }, 10000);
 
-// Graceful shutdown
 process.on('SIGINT', () => {
 	log.info('INFO: Shutting down...');
 	if (discord) discord.close();

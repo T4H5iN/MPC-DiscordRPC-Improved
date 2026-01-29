@@ -8,20 +8,17 @@ const net = require('net');
 const EventEmitter = require('events');
 const log = require('fancy-log');
 
-// Discord IPC opcodes
 const OP_HANDSHAKE = 0;
 const OP_FRAME = 1;
 const OP_CLOSE = 2;
 const OP_PING = 3;
 const OP_PONG = 4;
 
-// Generate unique nonce
 function generateNonce() {
     return Math.random().toString(36).substring(2, 15) +
         Math.random().toString(36).substring(2, 15);
 }
 
-// Get Discord IPC path based on platform
 function getIPCPath(id = 0) {
     if (process.platform === 'win32') {
         return `\\\\?\\pipe\\discord-ipc-${id}`;
@@ -32,7 +29,6 @@ function getIPCPath(id = 0) {
     return `${prefix.replace(/\/$/, '')}/discord-ipc-${id}`;
 }
 
-// Encode data for Discord IPC
 function encode(opcode, data) {
     const jsonStr = JSON.stringify(data);
     const len = Buffer.byteLength(jsonStr);
@@ -43,7 +39,6 @@ function encode(opcode, data) {
     return packet;
 }
 
-// Decode Discord IPC message
 function decode(buffer) {
     const opcode = buffer.readInt32LE(0);
     const len = buffer.readInt32LE(4);
@@ -95,11 +90,7 @@ class DiscordIPC extends EventEmitter {
                 clearTimeout(timeout);
                 this.socket = socket;
                 this.connected = true;
-
-                // Setup socket handlers
                 this._setupSocket();
-
-                // Send handshake
                 this._sendHandshake();
                 resolve();
             });
@@ -123,7 +114,6 @@ class DiscordIPC extends EventEmitter {
             this.ready = false;
             this.emit('disconnected');
 
-            // Auto-reconnect
             if (!this.isReconnecting) {
                 this.isReconnecting = true;
                 this.reconnectTimer = setTimeout(() => {
@@ -171,7 +161,6 @@ class DiscordIPC extends EventEmitter {
                 this.close();
                 break;
             case OP_PONG:
-                // Pong received, connection is alive
                 break;
         }
     }
@@ -214,20 +203,17 @@ class DiscordIPC extends EventEmitter {
 
         const nonce = generateNonce();
 
-        // Build the activity payload with type support
         const activityPayload = {
-            type: activity.type ?? 3, // Default to Watching
+            type: activity.type ?? 3,
             state: activity.state,
             details: activity.details,
             instance: true
         };
 
-        // Add status_display_type if provided (undocumented field used by Plex)
         if (typeof activity.status_display_type === 'number') {
             activityPayload.status_display_type = activity.status_display_type;
         }
 
-        // Add timestamps
         if (activity.timestamps) {
             activityPayload.timestamps = {};
             if (activity.timestamps.start) {
@@ -238,7 +224,6 @@ class DiscordIPC extends EventEmitter {
             }
         }
 
-        // Add assets (images)
         if (activity.assets) {
             activityPayload.assets = {};
             if (activity.assets.large_image) {
@@ -255,9 +240,8 @@ class DiscordIPC extends EventEmitter {
             }
         }
 
-        // Add buttons
         if (activity.buttons && activity.buttons.length > 0) {
-            activityPayload.buttons = activity.buttons.slice(0, 2); // Max 2 buttons
+            activityPayload.buttons = activity.buttons.slice(0, 2);
         }
 
         const payload = {

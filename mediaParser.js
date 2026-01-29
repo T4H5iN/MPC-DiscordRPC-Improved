@@ -21,7 +21,6 @@ const QUALITY_TAGS = [
     '10bit', '8bit', 'Multi', 'Dual', 'Audio', 'Dual-Audio'
 ];
 
-// Common phrases to remove from folder/file names
 const REMOVE_PHRASES = [
     'The Complete Series',
     'Complete Series',
@@ -64,10 +63,8 @@ const YEAR_PATTERN = /[.\s_(-]?((?:19|20)\d{2})[.\s_)-]?/;
  * @returns {Object} Parsed media info
  */
 function parseFilename(filename) {
-    // Remove file extension
     let name = filename.replace(/\.[^/.]+$/, '');
 
-    // Store original for fallback
     const original = name;
 
     let result = {
@@ -75,11 +72,10 @@ function parseFilename(filename) {
         year: null,
         season: null,
         episode: null,
-        type: 'movie', // 'movie' or 'tv'
+        type: 'movie',
         originalFilename: filename
     };
 
-    // Try to detect TV show patterns
     for (const pattern of TV_PATTERNS) {
         const match = name.match(pattern);
         if (match) {
@@ -88,57 +84,44 @@ function parseFilename(filename) {
                 result.season = parseInt(match[1], 10);
                 result.episode = parseInt(match[2], 10);
             } else if (match.length === 2) {
-                // E01 only pattern
                 result.season = 1;
                 result.episode = parseInt(match[1], 10);
             }
-            // Get title from before the pattern
             name = name.substring(0, name.search(pattern));
             break;
         }
     }
 
-    // Extract year
     const yearMatch = name.match(YEAR_PATTERN);
     if (yearMatch) {
         result.year = parseInt(yearMatch[1], 10);
-        // Only use text before year as title
         const yearIndex = name.indexOf(yearMatch[0]);
         if (yearIndex > 0) {
             name = name.substring(0, yearIndex);
         }
     }
 
-    // Remove common phrases (case insensitive)
     for (const phrase of REMOVE_PHRASES) {
         const regex = new RegExp(`[\\s_-]*${phrase}[\\s_-]*`, 'gi');
         name = name.replace(regex, ' ');
     }
 
-    // Remove quality tags (case insensitive)
     for (const tag of QUALITY_TAGS) {
         const regex = new RegExp(`[.\\s_(-]${tag}(?:[.\\s_)-]|$)`, 'gi');
         name = name.replace(regex, ' ');
     }
 
-    // Remove release group at start like (CBB) or [SubGroup]
     name = name.replace(/^\([^)]+\)\s*/, '');
     name = name.replace(/^\[[^\]]+\]\s*/, '');
-
-    // Remove release group at end after a dash
     name = name.replace(/-[a-zA-Z0-9]+$/, '');
-
-    // Remove remaining brackets and their content
     name = name.replace(/\[[^\]]*\]/g, '');
     name = name.replace(/\([^)]*\)/g, '');
-
-    // Clean up: replace dots/underscores with spaces, trim
     name = name
         .replace(/[._]/g, ' ')
         .replace(/\s+/g, ' ')
         .replace(/-+/g, ' ')
-        .replace(/^\s*-\s*/, '') // Remove leading dash
-        .replace(/\s*-\s*$/, '') // Remove trailing dash
+        .replace(/^\s*-\s*/, '')
+        .replace(/\s*-\s*$/, '')
         .trim();
 
     result.title = name || original;

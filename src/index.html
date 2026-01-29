@@ -216,6 +216,10 @@
             <span>App Version</span>
             <button id="updateBtn">Check for Updates</button>
         </div>
+        <div class="control-item">
+            <span>Window Close Action</span>
+            <button id="resetCloseBtn">Reset Preference</button>
+        </div>
     </div>
 
     <div class="log-box" id="logContainer">
@@ -233,8 +237,8 @@
         const logContainer = document.getElementById('logContainer');
         const startupToggle = document.getElementById('startupToggle');
         const updateBtn = document.getElementById('updateBtn');
+        const resetCloseBtn = document.getElementById('resetCloseBtn');
 
-        // Initial state
         ipcRenderer.send('get-startup');
 
         ipcRenderer.on('get-startup-reply', (event, isEnabled) => {
@@ -243,6 +247,11 @@
 
         startupToggle.addEventListener('change', (e) => {
             ipcRenderer.send('toggle-startup', e.target.checked);
+        });
+
+        resetCloseBtn.addEventListener('click', () => {
+            ipcRenderer.send('reset-close-action');
+            alert('Window close preference reset.');
         });
 
         updateBtn.addEventListener('click', () => {
@@ -260,7 +269,7 @@
         });
 
         ipcRenderer.on('rpc-status', (event, data) => {
-            statusTitle.textContent = data.state; // e.g. "Watching"
+            statusTitle.textContent = data.state;
             statusDetail.textContent = data.details || '';
 
             if (data.state === 'Idle' || data.state === 'Unknown') {
