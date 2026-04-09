@@ -35,7 +35,7 @@ This program fetches playback data from MPC-HC / MPC-BE Web Interface and enrich
 
 2. Clone this repository:
    ```sh
-   git clone https://github.com/YOUR_USERNAME/MPC-DiscordRPC-Improved.git
+   git clone https://github.com/T4H5iN/MPC-DiscordRPC-Improved
    cd MPC-DiscordRPC-Improved
    ```
 
